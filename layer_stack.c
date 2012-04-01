@@ -45,9 +45,11 @@ void *init_physical_layer_recv(void *info);
 
 int main(int argc, char *argv[])
 {
-  int i, rv;
+  int i, rv, bytes_read;
   long thread_ret;
 
+  char read_buffer[PIPE_BUFFER_SIZE];
+  
   pthread_t t_net_send, t_net_recv, t_dl_send, t_dl_recv, t_phys_send, t_phys_recv;
 
   // Declare pipes for communication to/from each layer
@@ -59,6 +61,7 @@ int main(int argc, char *argv[])
   int *pipes[6] = {app_to_net, net_to_app, 
 		net_to_dl, dl_to_net, 
 		dl_to_phys, phys_to_dl};
+  int phys[2];
 
   // Make our pipes
   for(i = 0; i < num_pipes; i++)
@@ -78,6 +81,11 @@ int main(int argc, char *argv[])
 
   phys_send_info.in = pipe_read(dl_to_phys);
   phys_recv_info.out = pipe_write(phys_to_dl);
+
+  // For now, cheat and connect the physical layers together
+  pipe(phys);
+  phys_send_info.out = pipe_write(phys);
+  phys_recv_info.in = pipe_read(phys);
 
   printf("Creating layer threads...\n");
   if((rv = pthread_create(&t_net_send, NULL, init_network_layer_send, (void*)(&net_send_info))))
@@ -99,7 +107,12 @@ int main(int argc, char *argv[])
     printf("Error creating thread!\n");
 
   // Send something down our pipe
-  write(pipe_write(dl_to_phys), str, strlen(str) + 1);
+  printf("APP:  Sending string of length %d bytes:  %s", strlen(str) + 1, str);
+  write(pipe_write(app_to_net), str, strlen(str) + 1);
+
+  // Read it back, after it passes through all of the pipes
+  bytes_read = read(pipe_read(net_to_app), read_buffer, PIPE_BUFFER_SIZE);
+  printf("APP:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
   
   pthread_exit(NULL);
   exit(0);
@@ -114,36 +127,96 @@ void *init_physical_layer_send(void *info)
   // Grab something to process
   printf("PHY:  Thread created!\n");
   bytes_read = read(fds->in, read_buffer, 128);
-  printf("PHY:  Received string of length %d bytes:  %s", n, read_buffer);
+  printf("PHY:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
 
   // Send it down to the next pipe
-  write(fds->out, read_buffer, n);
+  write(fds->out, read_buffer, bytes_read);
 
   pthread_exit(NULL);
 }
 
 void *init_network_layer_send(void *info)
 {
+  int bytes_read;
+  struct layer_info *fds = (struct layer_info *)info;;
+  char read_buffer[PIPE_BUFFER_SIZE];
+
+  // Grab something to process
+  printf("NET:  Thread created!\n");
+  bytes_read = read(fds->in, read_buffer, 128);
+  printf("NET:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
+
+  // Send it down to the next pipe
+  write(fds->out, read_buffer, bytes_read);
+
   pthread_exit(NULL);
 }
 
 void *init_network_layer_recv(void *info)
-{
+{ 
+  int bytes_read;
+  struct layer_info *fds = (struct layer_info *)info;;
+  char read_buffer[PIPE_BUFFER_SIZE];
+
+  // Grab something to process
+  printf("NET:  Thread created!\n");
+  bytes_read = read(fds->in, read_buffer, 128);
+  printf("NET:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
+
+  // Send it down to the next pipe
+  write(fds->out, read_buffer, bytes_read);
+
   pthread_exit(NULL);
 }
 
 void *init_data_link_layer_send(void *info)
 {
+  int bytes_read;
+  struct layer_info *fds = (struct layer_info *)info;;
+  char read_buffer[PIPE_BUFFER_SIZE];
+
+  // Grab something to process
+  printf("DLL:  Thread created!\n");
+  bytes_read = read(fds->in, read_buffer, 128);
+  printf("DLL:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
+
+  // Send it down to the next pipe
+  write(fds->out, read_buffer, bytes_read);
+
   pthread_exit(NULL);
 }
 
 void *init_data_link_layer_recv(void *info)
 {
+  int bytes_read;
+  struct layer_info *fds = (struct layer_info *)info;;
+  char read_buffer[PIPE_BUFFER_SIZE];
+
+  // Grab something to process
+  printf("DLL:  Thread created!\n");
+  bytes_read = read(fds->in, read_buffer, 128);
+  printf("DLL:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
+
+  // Send it down to the next pipe
+  write(fds->out, read_buffer, bytes_read);
+
   pthread_exit(NULL);
 }
 
 void *init_physical_layer_recv(void *info)
 {
+  int bytes_read;
+  struct layer_info *fds = (struct layer_info *)info;;
+  char read_buffer[PIPE_BUFFER_SIZE];
+
+  // Grab something to process
+  printf("PHY:  Thread created!\n");
+  bytes_read = read(fds->in, read_buffer, 128);
+  printf("PHY:  Received string of length %d bytes:  %s", bytes_read, read_buffer);
+
+  // Send it down to the next pipe
+  write(fds->out, read_buffer, bytes_read);
+
   pthread_exit(NULL);
 }
 
