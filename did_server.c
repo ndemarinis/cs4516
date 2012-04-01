@@ -1,0 +1,119 @@
+/*
+ * did_server.c
+ * Nicholas DeMarinis
+ * 29 March 2012
+ */
+
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#include "layer_stack.h"
+
+#define DID_DEFAULT_PORT 4516
+#define MAX_PENDING 2
+#define MAX_CLIENTS 5
+
+// Struct for data we send to the client handler
+struct client_handler_data
+{
+  int sock; // Just the client's fd, for now
+};
+
+// Prototypes
+void *handle_client(void *data);
+void die_with_error(char *msg);
+
+// Globals
+struct client_handler_data client_data[MAX_CLIENTS];
+
+int main(int argc, char *argv[])
+{
+  int srv_sock, clnt_sock, curr_clients = 0;
+  unsigned int clnt_len;
+  struct sockaddr_in srv_addr, clnt_addr;
+
+  pthread_t threads[MAX_CLIENTS];
+
+  // Create our listen socket
+  if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+    die_with_error("socket() failed!");
+
+  // Create the address structure
+  memset(&srv_addr, 0, sizeof(srv_addr));
+  srv_addr.sin_family = AF_INET;
+  srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  srv_addr.sin_port = htons(DID_DEFAULT_PORT);
+
+  // Bind to the address we just specified
+  if((bind(srv_sock, (struct sockaddr *)(&srv_addr), sizeof(srv_addr)) < 0))
+    die_with_error("bind() failed!\n");
+
+  // Listen for connections
+  if((listen(srv_sock, MAX_PENDING) < 0))
+    die_with_error("listen() failed!");
+
+  for(;;)
+    {
+      clnt_len = sizeof(clnt_addr);
+      
+      if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
+	die_with_error("accept() failed!");
+      
+      client_data[curr_clients].sock = clnt_sock;
+      printf("Got client on socket:  %d\n", client_data[curr_clients].sock);
+
+      if(curr_clients < MAX_CLIENTS)
+	pthread_create(&(threads[curr_clients]), NULL, handle_client, 
+		       (void *)(&(client_data[curr_clients])));
+      else
+	die_with_error("Too many clients!");
+    }
+  
+  // We should never reach this.  Yet.
+  pthread_exit(NULL);
+  exit(0);
+}
+
+void *handle_client(void *data)
+{
+  struct client_handler_data *clnt = (struct client_handler_data *)data;
+  int pipes[2];
+
+  int to_read;
+  char read_buffer[PIPE_BUFFER_SIZE];
+
+  char *str = "Hello world!\n";
+
+  memset(read_buffer, 0, PIPE_BUFFER_SIZE);
+  
+  if((init_layer_stack(clnt->sock, pipes)))
+    die_with_error("Layer stack creation failed!");
+
+  to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE);
+  
+  printf("APP:  Read string of %d bytes:  %s\n", to_read, read_buffer);
+
+  // Send it straight back
+  write(pipe_write(pipes), read_buffer, to_read);
+  
+  //read(clnt->sock, &to_read, sizeof(int));
+  //printf("Read:  %d\n", to_read);
+
+  //read(clnt->sock, read_buffer, to_read);
+  //printf("Received message:  %s\n", read_buffer);
+
+
+  pthread_exit(NULL);
+}
+
+
+void die_with_error(char *msg)
+{
+  fprintf(stderr, "%s\n", msg);
+  exit(2);
+}
