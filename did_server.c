@@ -26,14 +26,13 @@ struct client_handler_data
 
 // Prototypes
 void *handle_client(void *data);
-void die_with_error(char *msg);
 
 // Globals
 struct client_handler_data client_data[MAX_CLIENTS];
 
 int main(int argc, char *argv[])
 {
-  int srv_sock, clnt_sock, curr_clients = 0;
+  int i, srv_sock, clnt_sock, curr_clients = 0;
   unsigned int clnt_len;
   struct sockaddr_in srv_addr, clnt_addr;
 
@@ -59,13 +58,13 @@ int main(int argc, char *argv[])
 
   for(;;)
     {
+      // When we receive a connection from a a client, make a new thread to handle them
       clnt_len = sizeof(clnt_addr);
       
       if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
 	die_with_error("accept() failed!");
       
       client_data[curr_clients].sock = clnt_sock;
-      printf("Got client on socket:  %d\n", client_data[curr_clients].sock);
 
       if(curr_clients < MAX_CLIENTS)
 	pthread_create(&(threads[curr_clients]), NULL, handle_client, 
@@ -79,41 +78,37 @@ int main(int argc, char *argv[])
   exit(0);
 }
 
+
+/**
+ * handle_client:  Main application layer thread for each client
+ * @author ndemarinis (Basic implementation)
+ */
 void *handle_client(void *data)
 {
   struct client_handler_data *clnt = (struct client_handler_data *)data;
-  int pipes[2];
+  int pipes[2]; // Make a pipe to connect to the layer stack
 
   int to_read;
   char read_buffer[PIPE_BUFFER_SIZE];
 
-  char *str = "Hello world!\n";
-
   memset(read_buffer, 0, PIPE_BUFFER_SIZE);
   
-  if((init_layer_stack(clnt->sock, pipes)))
+  if((init_layer_stack(clnt->sock, pipes))) // Initialize all of our layer threads
     die_with_error("Layer stack creation failed!");
 
-  to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE);
-  
-  printf("APP:  Read string of %d bytes:  %s\n", to_read, read_buffer);
+  for(;;)
+    {
+      printf("APP:  Starting a test read.\n\n");
 
-  // Send it straight back
-  write(pipe_write(pipes), read_buffer, to_read);
-  
-  //read(clnt->sock, &to_read, sizeof(int));
-  //printf("Read:  %d\n", to_read);
-
-  //read(clnt->sock, read_buffer, to_read);
-  //printf("Received message:  %s\n", read_buffer);
-
+      // Grab a string
+      to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE);
+      printf("APP:  Read string of %d bytes:  %s\n", to_read, read_buffer);
+      
+      // Send it straight back
+      printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
+      write(pipe_write(pipes), read_buffer, to_read);
+    }
 
   pthread_exit(NULL);
 }
 
-
-void die_with_error(char *msg)
-{
-  fprintf(stderr, "%s\n", msg);
-  exit(2);
-}

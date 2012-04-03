@@ -25,7 +25,7 @@ void die_with_error(char *msg);
 
 int main(int argc, char *argv[])
 {
-  int i, curr_str_len, terminated = 0;
+  int i, n, curr_str_len, terminated = 0;
   int sock, bytes_recvd;
   unsigned int echo_str_len;
   char *srv_ip, *echo_str;
@@ -67,22 +67,21 @@ int main(int argc, char *argv[])
  
   echo_str_len = strlen(argv[2]) + 1;
 
-  send(sock, &echo_str_len, sizeof(int), 0);
-  
-  //      send(sock, "NOM", strlen("NOM") + 1, 0);
-  
-  if((send(sock, echo_str, echo_str_len, 0) != echo_str_len))
-    die_with_error("send() sent a different number of bytes than expected");
-
-  memset(recv_buffer, 0, RECV_BUF_SIZE); // Zero our buffer for safety. 
-  
-  if((bytes_recvd = recv(sock, recv_buffer, RECV_BUF_SIZE - 1, 0)) <= 0)
-    die_with_error("recv() failed or connection closed unexpectedly!");
-  
-  recv_buffer[bytes_recvd] = '\0';
-
-  printf("Received string of %d bytes:  %s\n", bytes_recvd, recv_buffer);
-  
+  //send(sock, &echo_str_len, sizeof(int), 0);
+  for(n = 0; n < 5; n++)
+    {
+      if((send(sock, echo_str, echo_str_len, 0) != echo_str_len))
+	die_with_error("send() sent a different number of bytes than expected");
+      
+      memset(recv_buffer, 0, RECV_BUF_SIZE); // Zero our buffer for safety. 
+      
+      if((bytes_recvd = recv(sock, recv_buffer, RECV_BUF_SIZE - 1, 0)) <= 0)
+	die_with_error("recv() failed or connection closed unexpectedly!");
+      
+      recv_buffer[bytes_recvd] = '\0';
+      
+      printf("Received string of %d bytes:  %s\n", bytes_recvd, recv_buffer);
+    }
 #if 0
   // Send the terminator
   //if((send(sock, term_string, TERM_STR_LEN, 0)) != TERM_STR_LEN)
