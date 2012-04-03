@@ -32,7 +32,7 @@ struct client_handler_data client_data[MAX_CLIENTS];
 
 int main(int argc, char *argv[])
 {
-  int i, srv_sock, clnt_sock, curr_clients = 0;
+  int srv_sock, clnt_sock, curr_clients = 0;
   unsigned int clnt_len;
   struct sockaddr_in srv_addr, clnt_addr;
 
@@ -98,6 +98,7 @@ void *handle_client(void *data)
 
   for(;;)
     {
+      // Just try and echo a message for now.
       printf("APP:  Starting a test read.\n\n");
 
       // Grab a string

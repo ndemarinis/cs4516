@@ -1,5 +1,6 @@
 /*
  * echo_client.c
+ * Stripped as a test platform for Project 1
  * Nicholas DeMarinis
  * 12 March 2012
  */
@@ -25,22 +26,20 @@ void die_with_error(char *msg);
 
 int main(int argc, char *argv[])
 {
-  int i, n, curr_str_len, terminated = 0;
+  int n;
   int sock, bytes_recvd;
   unsigned int echo_str_len;
   char *srv_ip, *echo_str;
-  char *curr_str, *buffer_end; // Temporary pointers for string isolation later
   
   struct hostent *srv_host;
   struct sockaddr_in srv_addr;
 
   char recv_buffer[RECV_BUF_SIZE];
-  char term_string[TERM_STR_LEN] = TERMINATOR_STR;
 
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
-	      "Usage:  %s <Server IP> <Echo word> [ up to four more words ]\n", argv[0]);
+	      "Usage:  %s <Server IP> <Echo word>\n", argv[0]);
       exit(1);
     }
 
@@ -82,52 +81,6 @@ int main(int argc, char *argv[])
       
       printf("Received string of %d bytes:  %s\n", bytes_recvd, recv_buffer);
     }
-#if 0
-  // Send the terminator
-  //if((send(sock, term_string, TERM_STR_LEN, 0)) != TERM_STR_LEN)
-  //  die_with_error("send() sent a different number of bytes than expected");
-  
-  for(;;) // Try to recveive the same strings back from the server
-    {
-      memset(recv_buffer, 0, RECV_BUF_SIZE); // Zero our buffer for safety. 
-
-      if((bytes_recvd = recv(sock, recv_buffer, RECV_BUF_SIZE - 1, 0)) <= 0)
-	die_with_error("recv() failed or connection closed unexpectedly!");
-
-      // We could have just taken in more than one string, so we need to separate them.  
-      // See the server source file for an explanation of why it's done this way.  
-      recv_buffer[bytes_recvd] = '\0'; // Always terminate the end of the buffer for safety.  
-      curr_str = recv_buffer;
-      buffer_end = recv_buffer + bytes_recvd;
-
-#ifdef DEBUG
-      printf("Received %d bytes:  0x", bytes_recvd);
-      for(i = 0; i < bytes_recvd; i++)
-	printf("%02X", recv_buffer[i]);
-      printf("\n");
-#endif
-
-      while(curr_str < buffer_end) 
-	{
-	  curr_str_len = strlen(curr_str) + 1;
-	  
-	  // Break out if we find the terminator, which, interestingly, is null-terminated
-	  if(!strncmp(curr_str, term_string, TERM_STR_LEN))
-	    {
-	      terminated = 1; // Set a flag so we know to break out
-	      break;
-	    }
-
-	  printf("Echo Client:  Received string of %d bytes from server:  %s\n", 
-		 curr_str_len, curr_str);
-	  
-	  curr_str += curr_str_len; // Move our pointer to the next string.  
-	}
-      
-      if(terminated) // Stop trying to receive if we found it.  
-	break;
-    }
-#endif
 
   // Cleanup
   printf("Echo Client:  Done.\n"); 
