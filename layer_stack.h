@@ -20,6 +20,7 @@
 
 #define PIPE_BUFFER_SIZE 128
 #define MAX_CLIENTS 5
+#define PACKET_OVERHEAD 6
 
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
@@ -38,6 +39,14 @@ struct layer_stack
   struct layer_info dl_send_info, dl_recv_info;
   struct layer_info phys_send_info, phys_recv_info;
   pthread_mutex_t wire_lock; // Mutex for controlling which piece of the physical layer has the wire
+};
+
+struct packet {
+    uint16_t seq_num; //First two bytes are the sequence number
+    uint16_t seq_total; //Second two bytes signify the total number of packets in this sequence
+    uint8_t opcode; //The opcode for this packet
+    uint8_t length; //6th byte is the length of this packets data field 
+    char payload[256]; //reserve space for the maximum amount of data the payload could contain
 };
 
 // Prototypes
