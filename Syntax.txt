@@ -1,0 +1,39 @@
+Syntax
+
+login opcode 0x01 -> "login <username>"
+        *data recieved by server
+        "<username>"
+
+create record opcode 0x02 -> "create"
+
+query record opcode 0x03 -> "query name <First Name> <Last Name>"
+                "query location <location>"
+                *data recieved by server
+                "NAME:<firstName>,<lastName>"
+                "LOCATION:<location>";
+
+update record opcode 0x04 -> "update <id> <firstName> <lastName>"
+                    *data recieved by server
+                    "<id>,<firstName>,<lastName>"
+
+add picture opcode 0x05 -> "add <firstName> <lastName> <picture>"
+                    *data recieved by server
+                    1st   packet:   "<firstName>,<lastName>"
+                    2nd+ packets:   "<pictureData>"
+                    These picture data packets will continue until the entirety of the picture has been transmitted
+                    The file is complete once the server has recieved a packet ending with an EOF character
+
+connect picture opcode 0x06 -> "connect <pictureID> <bodyID>"
+                    *data recieved by server
+                    "<pictureID>,<bodyID>"
+
+logout opcode 0x07 -> "logout"
+            *data recieved by server
+            This packet's payload will be empty
+            Server should see the 0x07 logout opcode and know to log the user out
+
+download picture opcode 0x08 -> "download <pictureID>"
+                    *data recieved by server
+                    "<pictureID>"
+
+quit    -> exits out of the client, nothing is sent to the server

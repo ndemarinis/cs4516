@@ -106,8 +106,8 @@ void *handle_client(void *data)
       printf("APP:  Read string of %d bytes:  %s\n", to_read, read_buffer);
       
       // Send it straight back
-      printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
-      write(pipe_write(pipes), read_buffer, to_read);
+      //printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
+      //write(pipe_write(pipes), read_buffer, to_read);
     }
 
   pthread_exit(NULL);

@@ -20,7 +20,8 @@
 
 #define PIPE_BUFFER_SIZE 128
 #define MAX_CLIENTS 5
-#define PACKET_OVERHEAD 6
+#define PACKET_OVERHEAD 4
+#define MAX_PAYLOAD 252
 
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
@@ -43,10 +44,9 @@ struct layer_stack
 
 struct packet {
     uint16_t seq_num; //First two bytes are the sequence number
-    uint16_t seq_total; //Second two bytes signify the total number of packets in this sequence
     uint8_t opcode; //The opcode for this packet
-    uint8_t length; //6th byte is the length of this packets data field 
-    char payload[256]; //reserve space for the maximum amount of data the payload could contain
+    uint8_t length; //4th and 5th byte is the length of this packets data field 
+    char payload[MAX_PAYLOAD]; //reserve space for the maximum amount of data the payload could contain
 };
 
 // Prototypes
