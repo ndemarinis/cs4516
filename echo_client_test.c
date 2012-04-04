@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
       
       if((bytes_recvd = recv(sock, recv_buffer, RECV_BUF_SIZE - 1, 0)) <= 0)
 	die_with_error("recv() failed or connection closed unexpectedly!");
-      
+
       recv_buffer[bytes_recvd] = '\0';
       
       printf("Received string of %d bytes:  %s\n", bytes_recvd, recv_buffer);

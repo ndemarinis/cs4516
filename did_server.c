@@ -104,7 +104,7 @@ void *handle_client(void *data)
       // Grab a string
       to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE);
       printf("APP:  Read string of %d bytes:  %s\n", to_read, read_buffer);
-      
+
       // Send it straight back
       printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
       write(pipe_write(pipes), read_buffer, to_read);
