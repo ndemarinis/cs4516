@@ -20,6 +20,7 @@
 
 #define PIPE_BUFFER_SIZE 128
 #define MAX_CLIENTS 5
+#define MAX_PACKET 256
 #define PACKET_OVERHEAD 4
 #define MAX_PAYLOAD 252
 

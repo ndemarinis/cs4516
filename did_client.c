@@ -88,7 +88,23 @@ int main(int argc, char *argv[]){
             //set the send flag
             send = 1;
         } else if (strcmp(token, "create") == 0){
+            char *firstName = strtok(NULL, " \n");
+            char *lastName = strtok(NULL, " \n");
+            char *location = strtok(NULL, " \n");
 
+            //set create opcode
+            p.opcode = 0x02;
+
+            //copy data into packet
+            strcpy(p.payload, firstName);
+            strcat(p.payload, ",");
+            strcat(p.payload, lastName);
+            strcat(p.payload, ",");
+            strcat(p.payload, location);
+            p.length = strlen(p.payload);
+            
+            //set the send flag
+            send = 1;
         } else if (strcmp(token, "query") == 0){
             //process query command: syntax "query name <firstName> <lastName>" or "query location <location>"
             //tokenize name or location
@@ -225,9 +241,6 @@ int main(int argc, char *argv[]){
             cur_seq_num++;
 
             write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
-
-            //REMOVE THIS FOR FINAL PRODUCT ONCE THE LAYER TEST OUTPUTS ARE REMOVED!
-            usleep(100);
         }
     }
 
