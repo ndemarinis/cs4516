@@ -31,11 +31,11 @@
 
 #define MAX_SEQ 1
 
-#define FRAME_TYPE_FRAME 0x00
-#define FRAME_TYPE_ACK   0xFF
+#define FRAME_TYPE_FRAME 0xBE
+#define FRAME_TYPE_ACK   0xEF
 
-#define FRAME_NOT_EOP 0x00
-#define FRAME_IS_EOP 0xFF
+#define FRAME_NOT_EOP 0xDE
+#define FRAME_IS_EOP 0xAD
 
 #define FRAME_TERMINATOR 0x03
 
@@ -94,6 +94,7 @@ struct frame {
   uint16_t seq;        // Sequence number for this frame
   uint16_t checksum;   // Checksum, determined with folding XOR
   uint8_t  end_of_pkt; // Whether or not this is the end of the backet
+  uint8_t length;      // Length of the payload
   char payload[FRAME_PAYLOAD_SIZE]; // Payload buffer, max of 150 bytes
   char term; // Terminator, a DLE byte
 };

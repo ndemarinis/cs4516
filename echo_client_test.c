@@ -78,8 +78,9 @@ int main(int argc, char *argv[])
   sleep(1);
 
   //send(sock, &echo_str_len, sizeof(int), 0);
-  for(n = 0; n < 5; n++)
+  for(n = 0; n < 1; n++)
     {
+      printf("\nSending a new string of length %d bytes...\n", echo_str_len);
       memset(&out, 0, sizeof(struct packet));
       memcpy(out.payload, echo_str, echo_str_len);
       out.length = echo_str_len;
@@ -88,13 +89,15 @@ int main(int argc, char *argv[])
 	die_with_error("send() sent a different number of bytes than expected");
       
       memset(&in, 0, sizeof(struct packet)); // Zero our buffer for safety. 
-	     
-      if((bytes_recvd = read(pipe_read(pipes), in.payload, sizeof(struct packet)) <= 0))
+#if 0	     
+      if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
 	 die_with_error("recv() failed or connection closed unexpectedly!");
 
       recv_buffer[bytes_recvd] = '\0';
       
-      printf("Received string of %d bytes:  %s\n", bytes_recvd, out.payload);
+      printf("Received string of %d bytes:  %s\n", bytes_recvd, in.payload);
+#endif
+      sleep(1);
     }
 
   // Cleanup

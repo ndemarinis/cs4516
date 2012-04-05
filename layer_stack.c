@@ -185,32 +185,41 @@ void *init_network_layer_send(void *info)
 
       if(pkt_in.length <= FRAME_PAYLOAD_SIZE)
 	{
-	  memcpy(&s1, &pkt_in, total_pkt_len);
+	  printf("NET:  Constructed segment 1 of length %d byteswith payload of %d bytes.\n", 
+		 total_pkt_len, pkt_in.length);
+	  memcpy(s1.payload, &pkt_in, total_pkt_len);
 	  s1.length = total_pkt_len;
 	  s1.end_of_pkt = FRAME_IS_EOP;
 	}
       else // We need >1 frame
 	{
-	  memcpy(&s1, &pkt_in, FRAME_PAYLOAD_SIZE);
+	  printf("NET:  Constructed segment 1 with payload of %d bytes.\n", 
+		 FRAME_PAYLOAD_SIZE);
+
+	  memcpy(s1.payload, &pkt_in, FRAME_PAYLOAD_SIZE);
 	  s1.length = FRAME_PAYLOAD_SIZE;
 	  s1.end_of_pkt = FRAME_NOT_EOP;
 
-	  memcpy(&s2, (&pkt_in + FRAME_PAYLOAD_SIZE), total_pkt_len - FRAME_PAYLOAD_SIZE);
+	  printf("NET:  Constructed segment 1 with payload of %d bytes.\n", 
+		 total_pkt_len - FRAME_PAYLOAD_SIZE);
+
+	  memcpy(s2.payload, (&pkt_in + FRAME_PAYLOAD_SIZE), total_pkt_len - FRAME_PAYLOAD_SIZE);
 	  s2.length = total_pkt_len - FRAME_PAYLOAD_SIZE;
 	  s2.end_of_pkt = FRAME_IS_EOP;
 	}
-      printf("NET:  Sending %d bytes\n", bytes_read);
       
       // Send it down to the next pipe
       pthread_mutex_lock(&net_dl_wire_lock);
       
       bytes_written = write(fds->out, &s1, sizeof(struct packet_segment));
       net_to_dl_frame_size += bytes_written;
+      printf("NET:  Sent first segment of %d bytes\n", bytes_written);
 
       if(pkt_in.length > FRAME_PAYLOAD_SIZE) // Send the second frame, if necessary
 	{
 	  bytes_written = write(fds->out, &s2, sizeof(struct packet_segment));
 	  net_to_dl_frame_size += bytes_written;
+	  printf("NET:  Sent first segment of %d bytes\n", bytes_written);
 	}
 
       pthread_mutex_unlock(&net_dl_wire_lock);
@@ -226,34 +235,35 @@ void *init_network_layer_recv(void *info)
 
   struct packet pkt_out;
   // Since the payload is at most 256 bytes, it will comprise at most two frames
-  struct packet_segment s1, s2;
+  struct frame f1, f2;
 
   printf("NET:  Thread created!\n");
   
   for(;;)
     {
       memset(&pkt_out, 0, sizeof(struct packet));
-      memset(&s1, 0, sizeof(struct packet_segment));
-      memset(&s2, 0, sizeof(struct packet_segment));
+      memset(&f1, 0, sizeof(struct frame));
+      memset(&f2, 0, sizeof(struct frame));
 
       // Grab a segment to process
-      bytes_read = read(fds->in, &s1, sizeof(struct packet_segment));
-      printf("NET:  Received segment of %d bytes\n", bytes_read);
+      bytes_read = read(fds->in, &f1, sizeof(struct frame));
+      printf("NET:  Received frame of %d bytes with payload of %d bytes\n", bytes_read, f1.length);
 
-      if(s1.end_of_pkt == FRAME_NOT_EOP)
+      if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
-	  bytes_read = read(fds->in, &s2, sizeof(struct packet_segment));
-	  printf("NET:  Received second segment of %d bytes\n", bytes_read);
+	  bytes_read = read(fds->in, &f2, sizeof(struct frame));
+	  printf("NET:  Received second frame of %d bytes with payload of %d bytes\n", 
+		 bytes_read, f2.length);
 	}
       
       // Copy the segments into our packet
-      memcpy(&pkt_out, &(s1.payload), s1.length);
+      memcpy(&pkt_out, f1.payload, f1.length);
    
-      if(s1.end_of_pkt == FRAME_NOT_EOP)
-	memcpy(&pkt_out + FRAME_PAYLOAD_SIZE, &s2, s2.length);
+      if(f1.end_of_pkt == FRAME_NOT_EOP)
+	memcpy(&pkt_out + FRAME_PAYLOAD_SIZE, &f2.payload, f2.length);
 
       // Send it down to the next pipe
-      write(fds->out, &pkt_out, bytes_read);
+      write(fds->out, &pkt_out, sizeof(struct packet));
     }
   
   pthread_exit(NULL);
@@ -313,7 +323,8 @@ void *init_data_link_layer(void *info)
 	case PHYSICAL_FRAME_READY: // Frame is going up, to the network layer
 	  // We just received a frame
 	  recvd_frame = (struct frame *)read_buffer;
-	  printf("DLL:  Got a frame from PHY of %d bytes.\n", bytes_read);
+	  printf("DLL:  Got a frame from PHY of %d bytes with payload of %d bytes\n", 
+		 bytes_read, recvd_frame->length);
 
 	  // If the frame we just received was what we wanted
 	  if(recvd_frame->type == FRAME_TYPE_FRAME && recvd_frame->seq == frame_expected)
@@ -323,7 +334,7 @@ void *init_data_link_layer(void *info)
 	      send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, frame_expected);
 
 	      // Send the packet over to the network layer
-	      write(fds->top_out, recvd_frame->payload, bytes_read);
+	      write(fds->top_out, recvd_frame, sizeof(struct frame));
 	      frame_expected++;
 	    }
 	  
@@ -399,7 +410,8 @@ void *init_physical_layer_recv(void *info)
 	  exit(2);
 	}
       else
-	printf("PHY:  Received %d bytes\n", bytes_read);
+	printf("PHY:  Received frame of %d bytes with payload of %d bytes\n", 
+	       bytes_read, frame_in.length);
       
       // Send it down to the next pipe
       pthread_mutex_lock(&phys_dl_wire_lock);
@@ -489,6 +501,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
   out.type = frame_type;
   out.seq = seq_num;
   out.checksum = 0xBEEF; // Just fill in something for now
+  out.length = (frame_type == FRAME_TYPE_FRAME) ? pkt_buffer[seq_num].length : 0;
   out.end_of_pkt = pkt_buffer[seq_num].end_of_pkt;
 
   // TODO:  Make size of ACK frame actually smaller
@@ -498,9 +511,11 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 
   out.term = FRAME_TERMINATOR;
 
-  printf("DLL:  Sending Frame %s with seq %d\n", get_frame_type(out), out.seq);
+  printf("DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
+	 get_frame_type(out), out.seq, sizeof(struct frame), out.length);
 
-  // Start the timer by recording when we sent this packet
+  // Start the timer by recording when we sent this frame (if it's an actual frame)
+  if(frame_type == FRAME_TYPE_FRAME)
   gettimeofday(&(pkt_buffer[seq_num].time_sent), NULL);
 
   // Send it to the physical layer

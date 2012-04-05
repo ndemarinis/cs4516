@@ -90,6 +90,7 @@ void *handle_client(void *data)
 
   int to_read;
   char read_buffer[PIPE_BUFFER_SIZE];
+  struct packet* pkt_in;
 
   memset(read_buffer, 0, PIPE_BUFFER_SIZE);
   
@@ -103,11 +104,16 @@ void *handle_client(void *data)
 
       // Grab a string
       to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE);
-      printf("APP:  Read string of %d bytes:  %s\n", to_read, read_buffer);
+
+      pkt_in = (struct packet *)read_buffer;
+
+      printf("APP:  Read packet of %d bytes with payload of %d bytes:  %s\n", 
+	     to_read, pkt_in->length, pkt_in->payload);
 
       // Send it straight back
-      printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
-      write(pipe_write(pipes), read_buffer, to_read);
+      //printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
+      //write(pipe_write(pipes), read_buffer, to_read);
+      sleep(2);
     }
 
   pthread_exit(NULL);
