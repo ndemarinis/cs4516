@@ -20,7 +20,7 @@ update record opcode 0x04 -> "update <id> <firstName> <lastName>"
 
 add picture opcode 0x05 -> "add <firstName> <lastName> <picture>"
                                 *data recieved by server
-                                1st   packet:   "<firstName>,<lastName>"
+                                1st   packet:   "<firstName>,<lastName>,<imageSize>"
                                 2nd+ packets:   "<pictureData>"
                                 These picture data packets will continue until the entirety of the picture has been transmitted
                                 The file is complete once the server has recieved a packet ending with an EOF character

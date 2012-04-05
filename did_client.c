@@ -163,10 +163,23 @@ int main(int argc, char *argv[]){
             if (!picture){
                 printf("\tCould not open %s!\n", pictureLoc);
             } else {
+                //get the total size of the picture in bytes!
+                //seek to the end of the file
+                fseek(qrcode, 0L, SEEK_END);
+                //get the location of the last byte... this is the total size in bytes
+                unsigned long sizeInBytes = ftell(qrcode);
+                //seek back to the beggining so the data can be read
+                fseek(qrcode, 0L, SEEK_SET);
+                //convert this size into a string so that it can be sent to the server
+                char size[4];
+                sprintf(size, "%lu", sizeInBytes);
+                
                 //Send a first packet containing the name associated with the picture and inform the server to prepare for a picture
                 strcpy(p.payload, firstName);
                 strcat(p.payload, ",");
                 strcat(p.payload, lastName);
+                strcat(p.payload, ",");
+                strcat(p.payload, size);
                 p.length = strlen(p.payload);
                 //set the opcode for this entire session of sending
                 p.opcode = 0x05;

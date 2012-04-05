@@ -195,22 +195,127 @@ void *handle_client(void *data){
             }
         //add picture
         } else if (opcode = 5){
-            /*payload syntax 1st   packet:   "<firstName>,<lastName>"
+            /*payload syntax 1st   packet:   "<firstName>,<lastName>,<imageSize>"
                              2nd+ packets:   "<pictureData>"
                              These picture data packets will continue until the entirety of the picture has been transmitted
                              The file is complete once the server has recieved a packet ending with an EOF character
             */
             //get the name information from the first packet transmitted
             char *firstName = strtok(client_p.payload, ",");
-            char *lastName = strtok(NULL, "");
+            char *lastName = strtok(NULL, ",");
+            char *imageSize = strtok(NULL, "");
 
-            
-            FILE *newPicture;
-            //start recieving the picture data
-            while(1){
+            unsigned long size = atol(imageSize);
+
+            //create an array capable of holding the entire image
+            char pictureData[size];
+            int i = 0;
+            //start recieving the picture data, continue until this entire picture has been recieved
+            while(i < size - 1){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
-                pictureData
+                //store the picture data into the array
+                pictureData[i] = client_p.payload;
+                //increment i by the length of the payload
+                i += client_p.length;
+            }
+
+            char *response;
+            int resp = addPicture(firstName, lastName, pictureData, response);
+
+            if (resp){
+                //send an error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //send the information back to the client!
+                return_response(pipes, response, &cur_seq_num);
+            }
+        //connect picture
+        } else if (opcode = 6){
+            //payload syntax "<pictureID>,<recordID>"
+            char *pictureID = strtok(client_p.payload, ",");
+            char *recordID = strtok(NULL, "");
+
+            int pID = atoi(pictureID);
+            int rID = atoi(recordID);
+
+            int resp = connectPictureToRecord(pID, rID);
+
+            if (resp){
+                //send and error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //send the success packet back!
+                return_response(pipes, "", &cur_seq_num);
+            }
+        //logout!
+        } else if (opcode = 7){
+            //payload syntax NONE
+            //break out of the while loop containin this and allow the thread processing this client to exit
+            break;
+        //download picture
+        } else if (opcode = 8){
+            //payload syntax "<pictureID>"
+            char *pictureID = strtok(client_p.payload, "");
+            int pID = atoi(pictureID);
+
+            char *pictureData;
+            int resp = queryPicture(pID, pictureData);
+
+            if (resp){
+                //send an error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //break the image into packets and send it back to the client!
+                int imageSize = sizeof(pictureData);
+                //write the data into a tempory file handle for simple reading when breaking into packets
+                //base the temporary file off of the pid to ensure uniqueness
+                char *filename;
+                int pid = getpid();
+                char cpid[10];
+                sprintf(cpid, "%d", pid);
+                strcpy(filename, "temp_");
+                strcat(filename, cpid);
+                strcat(filename, ".jpg");
+                //open the temp file for writing
+                FILE *picture = fopen(filename, "w");
+                //write the entire image to the file!
+                fwrite(pictureData, 1, sizeof(pictureData), picture);
+
+                //send a simple packet informing the client of the size of the image that it is going to recieve
+                response_p.opcode = 5;
+                response_p.seq_num = cur_seq_num;
+                cur_seq_num++;
+                sprintf(response_p.payload, "%d\0", sizeof(pictureData));
+                response_p.length = strlen(response_p.payload);
+                send_packet(pipes, response_p);
+
+                //read into packets and send them until the end of file is reached
+                //note this uses the same packet pointer the entire time so the opcode does not need to be set again
+                response_p.opcode = 5;
+                while(!feof(picture)){
+                    //read at most 251 bytes of the picture into the packets payload
+                    int readSize = fread(response_p.payload, 1, MAX_PAYLOAD, picture);
+                    //if there was no error then add the sequence number and the length to the packet then send it
+                    //DO NOT SET THE SEND FLAG, this will handle it on its own since there could be multiple sends
+                    if (!ferror(picture)){
+                        response_p.seq_num = cur_seq_num;
+                        cur_seq_num++;
+
+                        response_p.length = (uint8_t)readSize;
+
+                        //send this packet down to the data link layer
+                        send_packet(pipes, response_p);
+                    } else {
+                        //an error occured return an error code so that the client can stop processing the image and drop the corrupt data
+                        return_error(pipes, 1, &cur_seq_num);
+                        break;
+                    }
+                }
+                //close the picture that was being read
+                fclose(picture);
+                //delete the temporary file
+                remove(filename);
             }
         }
     // Send it straight back

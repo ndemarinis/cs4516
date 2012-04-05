@@ -50,6 +50,13 @@ struct packet {
     char payload[MAX_PAYLOAD]; //reserve space for the maximum amount of data the payload could contain
 };
 
+struct response {
+    int recordID;
+    char *firstName;
+    char *lastName;
+    char *location;
+};
+
 // Prototypes
 int init_layer_stack(int clnt_sock, int *app_layer_pipes);
 void die_with_error(char *msg);
