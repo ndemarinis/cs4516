@@ -1,6 +1,7 @@
 /*
  * layer_stack.h
  * Nicholas DeMarinis
+ * Eric Prouty
  * 29 March 2012
  */
 

@@ -1,3 +1,5 @@
+//Eric Prouty
+
 Syntax
 
 login opcode 0x01 -> "login <username>"
