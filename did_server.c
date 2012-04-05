@@ -48,6 +48,8 @@ int main(int argc, char *argv[])
   srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
   srv_addr.sin_port = htons(DID_DEFAULT_PORT);
 
+  setvbuf(stdout, NULL, _IONBF, 0);
+
   // Bind to the address we just specified
   if((bind(srv_sock, (struct sockaddr *)(&srv_addr), sizeof(srv_addr)) < 0))
     die_with_error("bind() failed!\n");
@@ -111,9 +113,8 @@ void *handle_client(void *data)
 	     to_read, pkt_in->length, pkt_in->payload);
 
       // Send it straight back
-      //printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
-      //write(pipe_write(pipes), read_buffer, to_read);
-      sleep(2);
+      printf("APP:  Sending packet of %d bytes back to client\n", to_read);
+      write(pipe_write(pipes), read_buffer, to_read);
     }
 
   pthread_exit(NULL);

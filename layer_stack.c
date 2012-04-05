@@ -166,8 +166,11 @@ void *init_network_layer_send(void *info)
   struct layer_info *fds = (struct layer_info *)info;
 
   // Since the payload is at most 256 bytes, it will comprise at most two frames
+  int i;
   struct packet pkt_in;
   struct packet_segment s1, s2; 
+
+  char *pkt = (char *)&pkt_in;
 
   printf("NET:  Thread created!\n");
   
@@ -182,6 +185,14 @@ void *init_network_layer_send(void *info)
       printf("NET:  Read packet of %d bytes with payload of %d bytes\n", bytes_read, pkt_in.length);
 
       total_pkt_len = pkt_in.length + sizeof(pkt_in.seq_num) + sizeof(pkt_in.opcode) + sizeof(pkt_in.length);
+
+      printf("Packet is:  ");
+      for(i = 0; i < pkt_in.length; i++)
+	{
+	  printf("%X ", pkt_in.payload[i]);
+	}
+      printf("\n");
+
 
       if(pkt_in.length <= FRAME_PAYLOAD_SIZE)
 	{
@@ -199,13 +210,32 @@ void *init_network_layer_send(void *info)
 	  memcpy(s1.payload, &pkt_in, FRAME_PAYLOAD_SIZE);
 	  s1.length = FRAME_PAYLOAD_SIZE;
 	  s1.end_of_pkt = FRAME_NOT_EOP;
-
-	  printf("NET:  Constructed segment 1 with payload of %d bytes.\n", 
+	  	  
+	  printf("NET:  Constructed segment 2 with payload of %d bytes.\n", 
 		 total_pkt_len - FRAME_PAYLOAD_SIZE);
 
-	  memcpy(s2.payload, (&pkt_in + FRAME_PAYLOAD_SIZE), total_pkt_len - FRAME_PAYLOAD_SIZE);
+	  printf("Packet start:  %p, Packet end:  %p Segment 2 start:  %p, Length:  %d, End:  %p\n", 
+		 pkt, pkt + pkt_in.length, pkt + FRAME_PAYLOAD_SIZE, total_pkt_len - FRAME_PAYLOAD_SIZE, pkt + total_pkt_len - FRAME_PAYLOAD_SIZE);
+	  memcpy(s2.payload, (pkt + FRAME_PAYLOAD_SIZE), 
+			      (total_pkt_len - FRAME_PAYLOAD_SIZE));
+	  
 	  s2.length = total_pkt_len - FRAME_PAYLOAD_SIZE;
 	  s2.end_of_pkt = FRAME_IS_EOP;
+
+	  printf("Second segment of packet is:  \n");
+	  for(i = 0; i < s2.length; i++)
+	    {
+	      printf("%02X ", s2.payload[i]);
+	    }
+	  printf("\n");
+
+	  printf("Second segment of packet is:  \n");
+	  for(i = 0; i < s2.length; i++)
+	    {
+	      printf("%02X ", s2.payload[i]);
+	    }
+	  printf("\n");
+
 	}
       
       // Send it down to the next pipe
@@ -219,7 +249,7 @@ void *init_network_layer_send(void *info)
 	{
 	  bytes_written = write(fds->out, &s2, sizeof(struct packet_segment));
 	  net_to_dl_frame_size += bytes_written;
-	  printf("NET:  Sent first segment of %d bytes\n", bytes_written);
+	  printf("NET:  Sent second segment of %d bytes\n", bytes_written);
 	}
 
       pthread_mutex_unlock(&net_dl_wire_lock);
@@ -230,10 +260,12 @@ void *init_network_layer_send(void *info)
 
 void *init_network_layer_recv(void *info)
 { 
-  int bytes_read;
+  int bytes_read, i;
   struct layer_info *fds = (struct layer_info *)info;
 
   struct packet pkt_out;
+  char *pkt = (char *)&pkt_out;
+
   // Since the payload is at most 256 bytes, it will comprise at most two frames
   struct frame f1, f2;
 
@@ -258,9 +290,34 @@ void *init_network_layer_recv(void *info)
       
       // Copy the segments into our packet
       memcpy(&pkt_out, f1.payload, f1.length);
-   
+
+      printf("Initial packet is:  ");
+      for(i = 0; i < pkt_out.length; i++)
+	{
+	  printf("%02X ", pkt_out.payload[i]);
+	}
+      printf("\n");
+
       if(f1.end_of_pkt == FRAME_NOT_EOP)
-	memcpy(&pkt_out + FRAME_PAYLOAD_SIZE, &f2.payload, f2.length);
+	{
+	  printf("NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
+		 f2.length, f1.length);
+	  for(i = 0; i < f2.length; i++)
+	    {
+	      printf("%02X ", f2.payload[i]);
+	    }
+	  printf("\n");
+	  
+	  //	  printf("Packet start:  %p, F1 length %d, F2 start:  %p, F2 length:  %d, F2 end:  %d, Packet max:  %p\n", pkt, 
+	  memcpy(pkt + f1.length, &(f2.payload), f2.length);
+	}
+
+      printf("Final packet is:  ");
+      for(i = 0; i < pkt_out.length; i++)
+	{
+	  printf("%02X ", pkt_out.payload[i]);
+	}
+      printf("\n");
 
       // Send it down to the next pipe
       write(fds->out, &pkt_out, sizeof(struct packet));

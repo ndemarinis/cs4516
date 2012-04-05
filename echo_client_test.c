@@ -28,7 +28,7 @@ void die_with_error(char *msg);
 
 int main(int argc, char *argv[])
 {
-  int n;
+  int n, i;
   int sock, bytes_recvd;
   unsigned int echo_str_len;
   char *srv_ip, *echo_str;
@@ -50,6 +50,8 @@ int main(int argc, char *argv[])
 
   srv_ip = argv[1];
   echo_str = argv[2];
+
+  setvbuf(stdout, NULL, _IONBF, 0);
 
   // Create a TCP socket for the connection
   if((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
@@ -81,23 +83,35 @@ int main(int argc, char *argv[])
   for(n = 0; n < 1; n++)
     {
       printf("\nSending a new string of length %d bytes...\n", echo_str_len);
+      if(echo_str_len > PACKET_PAYLOAD_SIZE)
+	die_with_error("String too large for one packet!");
+
       memset(&out, 0, sizeof(struct packet));
       memcpy(out.payload, echo_str, echo_str_len);
       out.length = echo_str_len;
+
+      for(i = 0; i < out.length; i++)
+	{
+	  printf("%02X ", out.payload[i]);
+	}
+      printf("\n");
 
       if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
 	die_with_error("send() sent a different number of bytes than expected");
       
       memset(&in, 0, sizeof(struct packet)); // Zero our buffer for safety. 
-#if 0	     
+
       if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
 	 die_with_error("recv() failed or connection closed unexpectedly!");
 
       recv_buffer[bytes_recvd] = '\0';
       
-      printf("Received string of %d bytes:  %s\n", bytes_recvd, in.payload);
-#endif
-      sleep(1);
+      printf("Received string of %d bytes:  %s\n", in.length, in.payload);
+      for(i = 0; i < in.length; i++)
+	{
+	  printf("%02X ", in.payload[i]);
+	}
+      printf("\n");
     }
 
   // Cleanup
