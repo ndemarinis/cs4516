@@ -14,8 +14,10 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "layer_stack.h"
+
 #define MAX_MSG_SIZE        12
-#define RECV_BUF_SIZE       32
+#define RECV_BUF_SIZE       1024
 #define DEFAULT_ECHO_PORT 4516
 
 #define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
@@ -33,6 +35,8 @@ int main(int argc, char *argv[])
   
   struct hostent *srv_host;
   struct sockaddr_in srv_addr;
+
+  int pipes[2];
 
   char recv_buffer[RECV_BUF_SIZE];
 
@@ -66,15 +70,24 @@ int main(int argc, char *argv[])
  
   echo_str_len = strlen(argv[2]) + 1;
 
+  // Make the layer stack
+  if((init_layer_stack(sock, pipes)))
+    die_with_error("Layer stack creation failed!");
+
+  sleep(1);
+
   //send(sock, &echo_str_len, sizeof(int), 0);
   for(n = 0; n < 5; n++)
     {
-      if((send(sock, echo_str, echo_str_len, 0) != echo_str_len))
+      memset(recv_buffer, 0, RECV_BUF_SIZE);
+      memcpy(recv_buffer, echo_str, echo_str_len);
+
+      if((write(pipe_write(pipes), recv_buffer, sizeof(struct packet)) != sizeof(struct packet)))
 	die_with_error("send() sent a different number of bytes than expected");
       
       memset(recv_buffer, 0, RECV_BUF_SIZE); // Zero our buffer for safety. 
       
-      if((bytes_recvd = recv(sock, recv_buffer, RECV_BUF_SIZE - 1, 0)) <= 0)
+      if((bytes_recvd = read(pipe_read(pipes), recv_buffer, RECV_BUF_SIZE - 1)) <= 0)
 	die_with_error("recv() failed or connection closed unexpectedly!");
 
       recv_buffer[bytes_recvd] = '\0';
@@ -88,8 +101,11 @@ int main(int argc, char *argv[])
   exit(0);
 }
 
+#if 0
 void die_with_error(char *msg)
 {
   printf("%s\n", msg);
   exit(2);
 }
+
+#endif

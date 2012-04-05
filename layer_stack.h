@@ -22,19 +22,21 @@
 #define MAX_CLIENTS 5
 #define PACKET_OVERHEAD 6
 
-#define PACKET_PAYLOAD_SIZE 256
+#define PACKET_PAYLOAD_SIZE 64 // NOT THE REAL PAYLOAD SIZE!
 #define FRAME_PAYLOAD_SIZE 150
 
 #define MAX_FRAME_SIZE 512
 #define MAX_PACKET_SIZE 512
 
-#define MAX_SEQ_NUM 255
+#define MAX_SEQ 1
 
 #define FRAME_TYPE_FRAME 0x00
 #define FRAME_TYPE_ACK   0xFF
 
 #define FRAME_NOT_EOP 0x00
 #define FRAME_IS_EOP 0xFF
+
+#define FRAME_TERMINATOR 0x03
 
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
