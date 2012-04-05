@@ -82,7 +82,6 @@ int main(int argc, char *argv[]){
             char* password = strtok(NULL, " \n");
 
             p.seq_num = cur_seq_num;
-            p.seq_total = 1;
             p.opcode = 0x01;
 
             char data[256];

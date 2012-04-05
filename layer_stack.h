@@ -19,15 +19,15 @@
 #define LAYER_STACK_H
 
 
-#define PIPE_BUFFER_SIZE 512
+#define PIPE_BUFFER_SIZE 2048
 #define MAX_CLIENTS 5
 #define PACKET_OVERHEAD 6
 
-#define PACKET_PAYLOAD_SIZE 64 // NOT THE REAL PAYLOAD SIZE!
-#define FRAME_PAYLOAD_SIZE 150
+#define PACKET_PAYLOAD_SIZE 256
+#define FRAME_PAYLOAD_SIZE  150
 
-#define MAX_FRAME_SIZE 512
-#define MAX_PACKET_SIZE 512
+#define MAX_FRAME_SIZE 158
+#define MAX_PACKET_SIZE 260
 
 #define MAX_SEQ 1
 
@@ -70,6 +70,7 @@ struct layer_stack
 
 struct frame_window {
   uint8_t end_of_pkt;       // Whether or not this payload is the end of the packet
+  uint8_t length;
   struct timeval time_sent; // Time this packet was sent
   char payload[FRAME_PAYLOAD_SIZE];
 };
@@ -77,7 +78,6 @@ struct frame_window {
 
 struct packet {
   uint16_t seq_num; //First two bytes are the sequence number
-  uint16_t seq_total;
   uint8_t opcode; //The opcode for this packet
   uint8_t length; //6th byte is the length of this packets data field 
   char payload[PACKET_PAYLOAD_SIZE]; //reserve space for the maximum amount of data the payload could contain
@@ -85,6 +85,7 @@ struct packet {
 
 struct packet_segment {
   uint8_t end_of_pkt;
+  uint8_t length;
   char payload[FRAME_PAYLOAD_SIZE];
 };
 

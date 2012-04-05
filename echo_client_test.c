@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
   int pipes[2];
 
   char recv_buffer[RECV_BUF_SIZE];
-  struct packet_segment out, in;
+  struct packet out, in;
   
   if((argc < 3) || (argc > 7))
     {
@@ -80,16 +80,16 @@ int main(int argc, char *argv[])
   //send(sock, &echo_str_len, sizeof(int), 0);
   for(n = 0; n < 5; n++)
     {
-      memset(&out, 0, sizeof(struct packet_segment));
+      memset(&out, 0, sizeof(struct packet));
       memcpy(out.payload, echo_str, echo_str_len);
-      out.end_of_pkt = FRAME_IS_EOP;
+      out.length = echo_str_len;
 
-      if((write(pipe_write(pipes), &out, sizeof(struct packet_segment)) != sizeof(struct packet_segment)))
+      if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
 	die_with_error("send() sent a different number of bytes than expected");
       
-      memset(&in, 0, sizeof(struct packet_segment)); // Zero our buffer for safety. 
+      memset(&in, 0, sizeof(struct packet)); // Zero our buffer for safety. 
 	     
-      if((bytes_recvd = read(pipe_read(pipes), in.payload, sizeof(struct packet_segment)) <= 0))
+      if((bytes_recvd = read(pipe_read(pipes), in.payload, sizeof(struct packet)) <= 0))
 	 die_with_error("recv() failed or connection closed unexpectedly!");
 
       recv_buffer[bytes_recvd] = '\0';
