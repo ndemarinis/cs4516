@@ -25,8 +25,9 @@ void *init_data_link_layer_recv(void *info);
 void *init_physical_layer_send(void *info);
 void *init_physical_layer_recv(void *info);
 
-enum frame_event wait_for_event(int net_fd, int phys_fd, char *buffer, int *bytes_read);
-void send_frame(int fd, struct packet *pkt_buffer, uint8_t frame_type, uint8_t seq_num, uint8_t eop);
+enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *window, 
+				int frames_buffered, int expected, char *buffer, int *bytes_read);
+void send_frame(int fd, struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num);
 
 // Create space for all of the info we need to send to each thread in each stack
 struct layer_stack stack_info[MAX_CLIENTS];
@@ -39,6 +40,9 @@ pthread_mutex_t net_dl_wire_lock;
 pthread_mutex_t phys_dl_wire_lock;
 int net_to_dl_frame_size = 0;
 int phys_to_dl_frame_size = 0;
+
+// Define a timeval for the maximum timeout
+struct timeval max_wait_time;
 
 /**
  * init_layer_stack:  Creates all layer threads and pipes to communicate between them.
@@ -96,6 +100,10 @@ int init_layer_stack(int clnt_sock, int *app_layer_pipes)
   // Connect the socket to the appropriate physical layer FDs.  
   phys_recv_info.in = clnt_sock;
   phys_send_info.out = clnt_sock;
+
+  // Define our max timeout
+  max_wait_time.tv_sec = 0;
+  max_wait_time.tv_usec = FRAME_TIMEOUT_MS * 1000;
 
   pthread_mutex_init(&net_dl_wire_lock, NULL);
   pthread_mutex_init(&phys_dl_wire_lock, NULL);
@@ -164,7 +172,8 @@ void *init_network_layer_send(void *info)
       memset(read_buffer, 0, PIPE_BUFFER_SIZE);
 
       // Grab something to process
-      bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE);
+      bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE); 
+
       printf("NET:  Sending %d bytes\n", bytes_read);
       
       // Send it down to the next pipe
@@ -182,7 +191,7 @@ void *init_network_layer_recv(void *info)
   int bytes_read;
   struct layer_info *fds = (struct layer_info *)info;
   char read_buffer[PIPE_BUFFER_SIZE];
-  
+
   printf("NET:  Thread created!\n");
   
   for(;;)
@@ -207,6 +216,8 @@ void *init_data_link_layer(void *info)
   struct bidirectional_layer_info *fds = (struct bidirectional_layer_info *)info;
 
   char read_buffer[MAX_FRAME_SIZE]; //  Buffer to grab frame from physical or network layer
+  
+  struct packet_segment *recvd_segment;
   struct frame *recvd_frame;
 
   int next_frame_to_send = 0;
@@ -214,17 +225,20 @@ void *init_data_link_layer(void *info)
   int frame_expected = 0;
   int ack_expected = 0;
 
-  struct packet packet_buffer[MAX_SEQ];
+  //struct packet packet_buffer[MAX_SEQ];
+  struct frame_window packet_buffer[MAX_SEQ + 1];
 
-  memset(packet_buffer, 0, MAX_SEQ*sizeof(struct packet));
-  printf("DLL:  Packet size:  %ld, Frame size:  %ld\n", sizeof(struct packet), sizeof(struct frame));
+  memset(packet_buffer, 0, (MAX_SEQ + 1)*sizeof(struct frame_window));
+  printf("DLL:  Packet size:  %ld, Frame size:  %ld, Payload size:  %d\n", 
+	 sizeof(struct packet), sizeof(struct frame), FRAME_PAYLOAD_SIZE);
+
   for(;;)
     {
       memset(read_buffer, 0, PIPE_BUFFER_SIZE);
 
       // Wait for one of our layers to tell us to do something.  
-      //      printf("DLL:  New pass.\n");
-      while((event = wait_for_event(fds->top_in, fds->bottom_in, read_buffer, &bytes_read)) != NOP)
+      while((event = wait_for_event(fds->top_in, fds->bottom_in, packet_buffer, frames_buffered, 
+				    ack_expected, read_buffer, &bytes_read)) != NOP)
 
       switch(event)
 	{
@@ -232,13 +246,16 @@ void *init_data_link_layer(void *info)
 	  printf("DLL:  Got a frame %d from NET of %d bytes with %d currently buffered.\n", 
 		 next_frame_to_send, bytes_read, frames_buffered);
 	  
+	  recvd_segment = (struct packet_segment *)read_buffer;
+
 	  // Put the frame in our sliding window
-	  memcpy(&(packet_buffer[next_frame_to_send]), read_buffer, sizeof(struct packet));
+	  memcpy(packet_buffer[next_frame_to_send].payload, recvd_segment->payload, 
+		 FRAME_PAYLOAD_SIZE);
+	  packet_buffer[next_frame_to_send].end_of_pkt = recvd_segment->end_of_pkt;
 	  frames_buffered++;
 
 	  // Send it down to the physical layer
-	  send_frame(fds->bottom_out, packet_buffer, 
-		     FRAME_TYPE_FRAME, next_frame_to_send, FRAME_IS_EOP);
+	  send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
 	  next_frame_to_send++;
 
 	  break;
@@ -252,8 +269,7 @@ void *init_data_link_layer(void *info)
 	    {
 	      printf("DLL:  Frame %d was expected frame %d\n", recvd_frame->seq, frame_expected);
 	      // Send an ACK for that frame
-	      send_frame(fds->bottom_out, packet_buffer,
-			 FRAME_TYPE_ACK, frame_expected, FRAME_IS_EOP);
+	      send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, frame_expected);
 
 	      // Send the packet over to the network layer
 	      write(fds->top_out, recvd_frame->payload, bytes_read);
@@ -262,18 +278,19 @@ void *init_data_link_layer(void *info)
 	  
 	  // If it wasn't, it was probably an ACK
 	  // TODO:  Handle receiving a non in-order ACK
-	  if(recvd_frame->type == FRAME_TYPE_ACK && recvd_frame->seq == ack_expected) 
+	  else if(recvd_frame->type == FRAME_TYPE_ACK && recvd_frame->seq == ack_expected) 
 	    {
 	      frames_buffered--;
 	      printf("DLL:  Received ACK for frame %d, now %d frames in buffer\n", 
 		     recvd_frame->seq, frames_buffered);
-	      //stop_timer(ack_expected);
+	      timerclear(&(packet_buffer[ack_expected].time_sent)); // Reset (clear) our timer
 	      ack_expected++; // Shrink our buffer accordingly
 	    }
-	  break;
+	  else
 	  
-	  printf("DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
-		 recvd_frame->type, recvd_frame->seq, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
+	    printf("DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
+		   recvd_frame->type, recvd_frame->seq, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
+	  break;
 	  
 	case TIME_OUT: // We lost one
 	  printf("DLL:  Caught timeout for frame %d\n", ack_expected);
@@ -281,14 +298,31 @@ void *init_data_link_layer(void *info)
 	  for(i = 1; i <= frames_buffered; i++)
 	    {
 	      // Resend the frame
-	      send_frame(fds->bottom_out, packet_buffer,
-			 FRAME_TYPE_FRAME, next_frame_to_send, FRAME_IS_EOP);
+	      send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
 	      next_frame_to_send++;
 	    }
 	default:
-	  printf("DLL:  I don't know what's going on here!\n");
+	  printf("DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", frame_expected, frames_buffered, next_frame_to_send, ack_expected);
 	  break;
 	}
+
+      // Handle wraparound
+      if(next_frame_to_send > MAX_SEQ)
+	{
+	  printf("DLL:  Wrapping next frame:  %d\n", next_frame_to_send);
+	  next_frame_to_send = 0;
+	}
+      if(ack_expected > MAX_SEQ)
+	{
+	  printf("DLL:  Wrapping ACK expected:  %d\n", ack_expected);
+	  ack_expected = 0;
+	}
+      if(frame_expected > MAX_SEQ)
+	{
+	  printf("DLL:  Wrapping frame expected:  %d\n", frame_expected);
+	  frame_expected = 0;
+	}
+      
     }
 }
 
@@ -335,14 +369,17 @@ void die_with_error(char *msg)
   exit(2);
 }
 
-enum frame_event wait_for_event(int net_fd, int phys_fd, char *buffer, int *b_read)
+enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *window, 
+				int frames_buffered, int expected, char *buffer, int *b_read)
 {
   int bytes_read;
   enum frame_event rv = NOP;
   
+  struct timeval curr_time, diff_time;
+
   // Try to read from our input pipe, but don't block if nothing's there
   pthread_mutex_lock(&net_dl_wire_lock);
-  if(net_to_dl_frame_size)
+  if(net_to_dl_frame_size && frames_buffered < MAX_SEQ)
     {
       bytes_read = read(net_fd, buffer, MAX_FRAME_SIZE);
       printf("EVENT:  Got into NET, read %d bytes.\n", bytes_read);
@@ -351,6 +388,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, char *buffer, int *b_re
     }
   pthread_mutex_unlock(&net_dl_wire_lock);
   
+  // Try to read from the physical layer pipe, without blocking, if that fails
   if(rv == NOP)
     {
       pthread_mutex_lock(&phys_dl_wire_lock);
@@ -364,13 +402,31 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, char *buffer, int *b_re
       pthread_mutex_unlock(&phys_dl_wire_lock);
     }
 
+  // If that fails, check the timers for timeouts
+  if(rv == NOP)
+    {
+      gettimeofday(&curr_time, NULL);
+      if(timerisset(&(window[expected].time_sent))) // Just check the one timer for now
+	{
+	  timersub(&curr_time, &(window[expected].time_sent), &diff_time);
+	  if(timercmp(&diff_time, &max_wait_time, >))
+	    {
+	      printf("EVENT:  Found TIMEOUT for frame %d with %d buffered.\n", 
+		     expected, frames_buffered);
+	      rv = TIME_OUT;
+	    }
+	}
+      //      else
+      //	printf("EVENT:  Expected %d timer for %d in buffer was cleared?\n", expected, frames_buffered);
+    }
+
   // Write out how much we just wrote to the buffer
   *b_read = bytes_read;
 
   return rv;
 }
 
- void send_frame(int fd, struct packet *pkt_buffer, uint8_t frame_type, uint8_t seq_num, uint8_t eop)
+ void send_frame(int fd, struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num)
 {
   struct frame out;
   
@@ -381,17 +437,19 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, char *buffer, int *b_re
   out.type = frame_type;
   out.seq = seq_num;
   out.checksum = 0xBEEF; // Just fill in something for now
-  out.end_of_pkt = eop;
+  out.end_of_pkt = pkt_buffer[seq_num].end_of_pkt;
 
   // TODO:  Make size of ACK frame actually smaller
 
   if(frame_type == FRAME_TYPE_FRAME)
-    memcpy(out.payload, &(pkt_buffer[seq_num]), sizeof(struct packet));
+    memcpy(out.payload, &(pkt_buffer[seq_num].payload), PACKET_PAYLOAD_SIZE);
 
   out.term = FRAME_TERMINATOR;
 
   printf("DLL:  Sending Frame %s with seq %d\n", get_frame_type(out), out.seq);
-  //  start_timer();
+
+  // Start the timer by recording when we sent this packet
+  gettimeofday(&(pkt_buffer[seq_num].time_sent), NULL);
 
   // Send it to the physical layer
   write(fd, &out, sizeof(struct frame));

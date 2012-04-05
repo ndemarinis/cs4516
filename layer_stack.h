@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
@@ -37,6 +38,8 @@
 #define FRAME_IS_EOP 0xFF
 
 #define FRAME_TERMINATOR 0x03
+
+#define FRAME_TIMEOUT_MS 100
 
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
@@ -65,12 +68,24 @@ struct layer_stack
   pthread_mutex_t wire_lock; // Mutex for controlling which piece of the physical layer has the wire
 };
 
+struct frame_window {
+  uint8_t end_of_pkt;       // Whether or not this payload is the end of the packet
+  struct timeval time_sent; // Time this packet was sent
+  char payload[FRAME_PAYLOAD_SIZE];
+};
+  
+
 struct packet {
   uint16_t seq_num; //First two bytes are the sequence number
   uint16_t seq_total;
   uint8_t opcode; //The opcode for this packet
   uint8_t length; //6th byte is the length of this packets data field 
   char payload[PACKET_PAYLOAD_SIZE]; //reserve space for the maximum amount of data the payload could contain
+};
+
+struct packet_segment {
+  uint8_t end_of_pkt;
+  char payload[FRAME_PAYLOAD_SIZE];
 };
 
 struct frame {

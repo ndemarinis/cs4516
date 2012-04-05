@@ -39,7 +39,8 @@ int main(int argc, char *argv[])
   int pipes[2];
 
   char recv_buffer[RECV_BUF_SIZE];
-
+  struct packet_segment out, in;
+  
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
@@ -79,20 +80,21 @@ int main(int argc, char *argv[])
   //send(sock, &echo_str_len, sizeof(int), 0);
   for(n = 0; n < 5; n++)
     {
-      memset(recv_buffer, 0, RECV_BUF_SIZE);
-      memcpy(recv_buffer, echo_str, echo_str_len);
+      memset(&out, 0, sizeof(struct packet_segment));
+      memcpy(out.payload, echo_str, echo_str_len);
+      out.end_of_pkt = FRAME_IS_EOP;
 
-      if((write(pipe_write(pipes), recv_buffer, sizeof(struct packet)) != sizeof(struct packet)))
+      if((write(pipe_write(pipes), &out, sizeof(struct packet_segment)) != sizeof(struct packet_segment)))
 	die_with_error("send() sent a different number of bytes than expected");
       
-      memset(recv_buffer, 0, RECV_BUF_SIZE); // Zero our buffer for safety. 
-      
-      if((bytes_recvd = read(pipe_read(pipes), recv_buffer, RECV_BUF_SIZE - 1)) <= 0)
-	die_with_error("recv() failed or connection closed unexpectedly!");
+      memset(&in, 0, sizeof(struct packet_segment)); // Zero our buffer for safety. 
+	     
+      if((bytes_recvd = read(pipe_read(pipes), in.payload, sizeof(struct packet_segment)) <= 0))
+	 die_with_error("recv() failed or connection closed unexpectedly!");
 
       recv_buffer[bytes_recvd] = '\0';
       
-      printf("Received string of %d bytes:  %s\n", bytes_recvd, recv_buffer);
+      printf("Received string of %d bytes:  %s\n", bytes_recvd, out.payload);
     }
 
   // Cleanup
