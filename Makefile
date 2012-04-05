@@ -2,6 +2,8 @@ CC=gcc -Wall
 
 all: did_server did_client
 
+client: did_client
+
 did_server: did_server.o layer_stack.o
 	$(CC) -pthread -g layer_stack.o did_server.o -o did_server
 

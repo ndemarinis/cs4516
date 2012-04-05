@@ -20,8 +20,13 @@
 
 #define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
 
+//prototypes
+void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num);
+void recieve_packet(int pipes[], struct packet *p);
+
 int main(int argc, char *argv[]){
     int sock;
+    int loggedIn = 0;
     char *srv_ip;
     char input[32];
   
@@ -74,20 +79,39 @@ int main(int argc, char *argv[]){
         
         //time to handle the command... create a packet that may be used
         struct packet p;
-        int send = 0;
         //handle the login command
-        if (strcmp(token, "login") == 0){
-            //process the login command: syntax "login <username>"
-            char* username = strtok(NULL, " \n");
-            p.opcode = 0x01;
+        if (!loggedIn){
+            if (strcmp(token, "login") == 0){
+                //process the login command: syntax "login <username>"
+                char* username = strtok(NULL, " \n");
+                p.opcode = 0x01;
 
-            //copy data into the packet
-            p.length = strlen(username);
-            strcpy(p.payload, username);
+                //copy data into the packet
+                p.length = strlen(username);
+                strcpy(p.payload, username);
 
-            //set the send flag
-            send = 1;
-        } else if (strcmp(token, "create") == 0){
+                //send the packet
+                send_packet(pipes, p, &cur_seq_num);
+
+                //wait for the servers response
+                recieve_packet(pipes, &p);
+
+                //if succesful login
+                if (p.opcode == 5){
+                    loggedIn = 1;
+                    printf("DID Client: Succesfully logged in!\n");
+                } else {
+                    //failed login so move onto the next iteration of the client
+                    printf("DID Client: Invalid login... try again.\n");
+                    continue;
+                }
+            }
+        }
+        //if the user enters the quit command it breaks out of the main while loop and allows the client to exit
+        if (strcmp(token, "quit") == 0) {
+            break;
+        }
+        if (strcmp(token, "create") == 0){
             char *firstName = strtok(NULL, " \n");
             char *lastName = strtok(NULL, " \n");
             char *location = strtok(NULL, " \n");
@@ -103,8 +127,18 @@ int main(int argc, char *argv[]){
             strcat(p.payload, location);
             p.length = strlen(p.payload);
             
-            //set the send flag
-            send = 1;
+            //send the packet
+            send_packet(pipes, p, &cur_seq_num);
+
+            //wait for the servers response
+            recieve_packet(pipes, &p);
+
+            //if succesful print out the recordID that was just created
+            if (p.opcode == 5){
+                printf("\tRecord created with ID: %s\n", p.payload);
+            } else {
+                printf("\tRecord creation failed, error code: %d\n", p.opcode);
+            }
         } else if (strcmp(token, "query") == 0){
             //process query command: syntax "query name <firstName> <lastName>" or "query location <location>"
             //tokenize name or location
@@ -122,8 +156,29 @@ int main(int argc, char *argv[]){
                 strcat(p.payload, lastName);
                 p.length = strlen(p.payload);
 
-                //set the send flag
-                send = 1;
+                //send the packet
+                send_packet(pipes, p, &cur_seq_num);
+
+                //wait for the response
+                recieve_packet(pipes, &p);
+
+                //if succesful print out the records
+                if (p.opcode == 5){
+                    printf("\tResults for name: %s %s\n", firstName, lastName);
+                    //parse the string of data back into a response structure
+                    char *tmp = strtok(p.payload, ",");
+                    while(tmp){
+                        char *recordID;
+                        strcpy(recordID, tmp);
+                        tmp = strtok(NULL, ",");
+                        char *location;
+                        strcpy(location, tmp);
+                        tmp = strtok(NULL, ",");
+                        printf("\t\tRecordID: %s\tLocation: %s\n", recordID, location);
+                    }
+                } else {
+                    printf("\tQuery failed, error code: %d\n", p.opcode);
+                }
             } else if (strcmp(tmp, "location") == 0){
                 //if location...
                 char *location = strtok(NULL, " \n");
@@ -134,8 +189,32 @@ int main(int argc, char *argv[]){
                 strcat(p.payload, location);
                 p.length = strlen(p.payload);
 
-                //set the send flag
-                send = 1;
+                //send the packet
+                send_packet(pipes, p, &cur_seq_num);
+
+                //wait for the response
+                recieve_packet(pipes, &p);
+
+                //if succesful print out the records
+                if (p.opcode == 5){
+                    printf("\tResults for location: %s\n", location);
+                    //parse the string of data back into a response structure
+                    char *tmp = strtok(p.payload, ",");
+                    while(tmp){
+                        char *recordID;
+                        strcpy(recordID, tmp);
+                        tmp = strtok(NULL, ",");
+                        char *firstName;
+                        strcpy(firstName, tmp);
+                        tmp = strtok(NULL, ",");
+                        char *lastName;
+                        strcpy(lastName, tmp);
+                        tmp = strtok(NULL, ",");
+                        printf("\t\tRecordID: %s\tName: %s, %s\n", recordID, lastName, firstName);
+                    }
+                } else {
+                    printf("\tQuery failed, error code: %d\n", p.opcode);
+                }
             }
         } else if (strcmp(token, "update") == 0) {
             //process update command: syntax "update <id> <firstName> <lastName>"
@@ -151,7 +230,18 @@ int main(int argc, char *argv[]){
             strcat(p.payload, lastName);
             p.length = strlen(p.payload);
 
-            send = 1;
+            //send the packet
+            send_packet(pipes, p, &cur_seq_num);
+
+            //wait for response
+            recieve_packet(pipes, &p);
+
+            if (p.opcode == 5){
+                //success
+                printf("\tRecord Updated!\n");
+            } else {
+                printf("\tUpdate failed, error code: %d\n", p.opcode);
+            }
         } else if (strcmp(token, "add") == 0){
             printf("\tSending picture to server...\n");
             char *firstName = strtok(NULL, " \n");
@@ -165,15 +255,15 @@ int main(int argc, char *argv[]){
             } else {
                 //get the total size of the picture in bytes!
                 //seek to the end of the file
-                fseek(qrcode, 0L, SEEK_END);
+                fseek(picture, 0L, SEEK_END);
                 //get the location of the last byte... this is the total size in bytes
-                unsigned long sizeInBytes = ftell(qrcode);
+                unsigned long sizeInBytes = ftell(picture);
                 //seek back to the beggining so the data can be read
-                fseek(qrcode, 0L, SEEK_SET);
+                fseek(picture, 0L, SEEK_SET);
                 //convert this size into a string so that it can be sent to the server
                 char size[4];
                 sprintf(size, "%lu", sizeInBytes);
-                
+
                 //Send a first packet containing the name associated with the picture and inform the server to prepare for a picture
                 strcpy(p.payload, firstName);
                 strcat(p.payload, ",");
@@ -212,6 +302,16 @@ int main(int argc, char *argv[]){
                 //close the picture that was being read
                 fclose(picture);
                 printf("\tPicture sent!\n");
+
+                //wait for servers response
+                recieve_packet(pipes, &p);
+
+                if (p.opcode == 5){
+                    //success print out the pictureID
+                    printf("\tPictured added with pictureID: %s\n", p.payload);
+                } else {
+                    printf("\tAdd picture failed, error code: %d\n", p.opcode);
+                }
             }
         } else if (strcmp(token, "connect") == 0){
             char *pictureID = strtok(NULL, " \n");
@@ -223,15 +323,26 @@ int main(int argc, char *argv[]){
             strcat(p.payload, bodyID);
             p.length = strlen(p.payload);
 
-            //set the send flag so that it is sent out
-            send = 1;
+            //send the packet
+            send_packet(pipes, p, &cur_seq_num);
+
+            //wait for servers response
+            if (p.opcode == 5){
+                printf("\tPicture succesfully connected to record!\n");
+            } else {
+                printf("Connect picture failed, error code: %d\n", p.opcode);
+            }
         } else if (strcmp(token, "logout") == 0){
             //no data is necessary in the payload for this packet
             //server will see the opcode and know to logout
             p.opcode = 0x07;
             p.length = 0;
 
-            send = 1;
+            //send the packet
+            send_packet(pipes, p, &cur_seq_num);
+
+            //set loggedIn back to 0, this will cause the client to wait for a login request
+            loggedIn = 0;
         } else if (strcmp(token, "download") == 0){
             char *pictureID = strtok(NULL, " \n");
 
@@ -239,21 +350,46 @@ int main(int argc, char *argv[]){
             strcpy(p.payload, pictureID);
             p.length = strlen(p.payload);
 
-            send = 1;
-        } else if (strcmp(token, "quit") == 0) {
-            break;
+            //send the packet
+            send_packet(pipes, p, &cur_seq_num);
+
+            //wait for response from server
+            recieve_packet(pipes, &p);
+
+            //if not an error then handle it
+            if (p.opcode == 5){
+                //this first packet is information about the picture about to be recieved
+                unsigned long sizeOfImage = atol(p.payload);
+
+                //all packets recieved from now on contain image data!
+                char *filename;
+                //filename will be <pictureID.jpg>
+                strcpy(filename, pictureID);
+                strcat(filename, ".jpg");
+                //open the file for writing
+                FILE *picture = fopen(filename, "w");
+
+                int bytes_processed = 0;
+                while (bytes_processed < sizeOfImage){
+                    //recieve a packet containing image data
+                    recieve_packet(pipes, &p);
+                    //write this data into the file
+                    fwrite(p.payload, 1, p.length, picture);
+                    //increment bytes_processed so we know how much of the image has been transferred
+                    bytes_processed += p.length;
+                }
+
+                //image is complete, close FILE handle
+                fclose(picture);
+                //inform the user that the picture is finished downloading
+                printf("\tPicture succesfully downloaded!\n");
+            } else {
+                //an error has occured!
+                printf("\tPicture download failed, error code: %d\n", p.opcode);
+            }
         } else {
           //invalid command!
           fputs("Invalid Command!\n", stdout);  
-        }
-
-        //if the send flag has been set then this packet is ready to be sent
-        if (send){
-            //add the sequence number and then increment
-            p.seq_num = cur_seq_num;
-            cur_seq_num++;
-
-            write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
         }
     }
 
@@ -261,4 +397,17 @@ int main(int argc, char *argv[]){
     printf("DID Client:  Done.\n"); 
     close(sock);
     exit(0);
+}
+
+void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num){
+    //add the sequence number and then increment
+    p.seq_num = *cur_seq_num;
+    *cur_seq_num++;
+
+    write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
+}
+
+void recieve_packet(int pipes[], struct packet *p){
+    //Wait for a packet to come in
+    read(pipe_read(pipes), p, MAX_PACKET);
 }
