@@ -23,5 +23,5 @@ disasterID_sql.o: disasterID_sql.c disasterID_sql.h
 	$(CC) -I/usr/local/mysql-current/include -c disasterID_sql.c 
 
 clean:
-	rm -fv did_server.o layer_stack.o did_server did_client.o did_client
+	rm -fv did_server.o layer_stack.o disasterID_sql.o did_server did_client.o did_client
 
