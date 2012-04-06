@@ -28,6 +28,7 @@ void *init_physical_layer_recv(void *info);
 enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *window, 
 				int frames_buffered, int expected, char *buffer, int *bytes_read);
 void send_frame(int fd, struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num);
+uint16_t compute_checksum(struct frame *frame);
 
 // Create space for all of the info we need to send to each thread in each stack
 struct layer_stack stack_info[MAX_CLIENTS];
@@ -166,7 +167,6 @@ void *init_network_layer_send(void *info)
   struct layer_info *fds = (struct layer_info *)info;
 
   // Since the payload is at most 256 bytes, it will comprise at most two frames
-  int i;
   struct packet pkt_in;
   struct packet_segment s1, s2; 
 
@@ -182,19 +182,13 @@ void *init_network_layer_send(void *info)
 
       // Grab something to process
       bytes_read = read(fds->in, &pkt_in, sizeof(struct packet));
-      printf("NET:  Read packet of %d bytes with payload of %d bytes\n", bytes_read, pkt_in.length);
+      printf("NET:  Read packet of %d bytes with payload of %d bytes\n", 
+	     bytes_read, pkt_in.length + 1);
 
-      total_pkt_len = pkt_in.length + sizeof(pkt_in.seq_num) + sizeof(pkt_in.opcode) + sizeof(pkt_in.length);
+      total_pkt_len = pkt_in.length + 1 + 
+	sizeof(pkt_in.seq_num) + sizeof(pkt_in.opcode) + sizeof(pkt_in.length);
 
-      printf("Packet is:  ");
-      for(i = 0; i < pkt_in.length; i++)
-	{
-	  printf("%X ", pkt_in.payload[i]);
-	}
-      printf("\n");
-
-
-      if(pkt_in.length <= FRAME_PAYLOAD_SIZE)
+      if(pkt_in.length + 1 <= FRAME_PAYLOAD_SIZE)
 	{
 	  printf("NET:  Constructed segment 1 of length %d byteswith payload of %d bytes.\n", 
 		 total_pkt_len, pkt_in.length);
@@ -214,28 +208,11 @@ void *init_network_layer_send(void *info)
 	  printf("NET:  Constructed segment 2 with payload of %d bytes.\n", 
 		 total_pkt_len - FRAME_PAYLOAD_SIZE);
 
-	  printf("Packet start:  %p, Packet end:  %p Segment 2 start:  %p, Length:  %d, End:  %p\n", 
-		 pkt, pkt + pkt_in.length, pkt + FRAME_PAYLOAD_SIZE, total_pkt_len - FRAME_PAYLOAD_SIZE, pkt + total_pkt_len - FRAME_PAYLOAD_SIZE);
 	  memcpy(s2.payload, (pkt + FRAME_PAYLOAD_SIZE), 
 			      (total_pkt_len - FRAME_PAYLOAD_SIZE));
 	  
 	  s2.length = total_pkt_len - FRAME_PAYLOAD_SIZE;
 	  s2.end_of_pkt = FRAME_IS_EOP;
-
-	  printf("Second segment of packet is:  \n");
-	  for(i = 0; i < s2.length; i++)
-	    {
-	      printf("%02X ", s2.payload[i]);
-	    }
-	  printf("\n");
-
-	  printf("Second segment of packet is:  \n");
-	  for(i = 0; i < s2.length; i++)
-	    {
-	      printf("%02X ", s2.payload[i]);
-	    }
-	  printf("\n");
-
 	}
       
       // Send it down to the next pipe
@@ -260,7 +237,7 @@ void *init_network_layer_send(void *info)
 
 void *init_network_layer_recv(void *info)
 { 
-  int bytes_read, i;
+  int bytes_read;
   struct layer_info *fds = (struct layer_info *)info;
 
   struct packet pkt_out;
@@ -291,33 +268,12 @@ void *init_network_layer_recv(void *info)
       // Copy the segments into our packet
       memcpy(&pkt_out, f1.payload, f1.length);
 
-      printf("Initial packet is:  ");
-      for(i = 0; i < pkt_out.length; i++)
-	{
-	  printf("%02X ", pkt_out.payload[i]);
-	}
-      printf("\n");
-
       if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
 	  printf("NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
 		 f2.length, f1.length);
-	  for(i = 0; i < f2.length; i++)
-	    {
-	      printf("%02X ", f2.payload[i]);
-	    }
-	  printf("\n");
-	  
-	  //	  printf("Packet start:  %p, F1 length %d, F2 start:  %p, F2 length:  %d, F2 end:  %d, Packet max:  %p\n", pkt, 
 	  memcpy(pkt + f1.length, &(f2.payload), f2.length);
 	}
-
-      printf("Final packet is:  ");
-      for(i = 0; i < pkt_out.length; i++)
-	{
-	  printf("%02X ", pkt_out.payload[i]);
-	}
-      printf("\n");
 
       // Send it down to the next pipe
       write(fds->out, &pkt_out, sizeof(struct packet));
@@ -337,10 +293,10 @@ void *init_data_link_layer(void *info)
   struct packet_segment *recvd_segment;
   struct frame *recvd_frame;
 
-  int next_frame_to_send = 0;
-  int frames_buffered = 0;
-  int frame_expected = 0;
-  int ack_expected = 0;
+  uint8_t next_frame_to_send = 0;
+  uint8_t frames_buffered = 0;
+  uint8_t frame_expected = 0;
+  uint8_t ack_expected = 0;
 
   //struct packet packet_buffer[MAX_SEQ];
   struct frame_window packet_buffer[MAX_SEQ + 1];
@@ -396,7 +352,6 @@ void *init_data_link_layer(void *info)
 	    }
 	  
 	  // If it wasn't, it was probably an ACK
-	  // TODO:  Handle receiving a non in-order ACK
 	  else if(recvd_frame->type == FRAME_TYPE_ACK && recvd_frame->seq == ack_expected) 
 	    {
 	      frames_buffered--;
@@ -405,10 +360,16 @@ void *init_data_link_layer(void *info)
 	      timerclear(&(packet_buffer[ack_expected].time_sent)); // Reset (clear) our timer
 	      ack_expected++; // Shrink our buffer accordingly
 	    }
-	  else
-	  
+	  else // If not, drop the frame	  
 	    printf("DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
 		   recvd_frame->type, recvd_frame->seq, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
+	  break;
+
+	case CHECKSUM_ERROR:
+	  recvd_frame = (struct frame *)read_buffer; // We just received a frame, albeit a bad one
+	  printf("DLL:  Got checksum error for %d, expecting seq %d, ACK %d, %d buffered, next %d, dropping frame.\n", 
+		 recvd_frame->type, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
+	  exit(3);
 	  break;
 	  
 	case TIME_OUT: // We lost one
@@ -480,22 +441,14 @@ void *init_physical_layer_recv(void *info)
   pthread_exit(NULL);
 }
 
-/**
- * die_with_error:  Print out a string and to stderr and then exit
- * @author ndemarinis
- */
-void die_with_error(char *msg)
-{
-  fprintf(stderr, "%s\n", msg);
-  exit(2);
-}
-
 enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *window, 
 				int frames_buffered, int expected, char *buffer, int *b_read)
 {
   int bytes_read;
+  uint16_t checksum;
   enum frame_event rv = NOP;
   
+  struct frame *recvd_frame = (struct frame *)buffer;
   struct timeval curr_time, diff_time;
 
   // Try to read from our input pipe, but don't block if nothing's there
@@ -508,7 +461,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
       rv = NETWORK_FRAME_READY;
     }
   pthread_mutex_unlock(&net_dl_wire_lock);
-  
+ 
   // Try to read from the physical layer pipe, without blocking, if that fails
   if(rv == NOP)
     {
@@ -521,6 +474,15 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 	  rv = PHYSICAL_FRAME_READY;
 	}
       pthread_mutex_unlock(&phys_dl_wire_lock);
+      
+      if(rv == PHYSICAL_FRAME_READY) // If our call just found a frame
+	{
+	  // Verify the frame we just received matches the checksum
+	  checksum = compute_checksum(recvd_frame);
+	  printf("EVENT:  Got checksum:  %04X vs %04X\n", checksum, recvd_frame->checksum);
+	  if(checksum != recvd_frame->checksum)
+	    rv = CHECKSUM_ERROR;
+	}
     }
 
   // If that fails, check the timers for timeouts
@@ -537,8 +499,6 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 	      rv = TIME_OUT;
 	    }
 	}
-      //      else
-      //	printf("EVENT:  Expected %d timer for %d in buffer was cleared?\n", expected, frames_buffered);
     }
 
   // Write out how much we just wrote to the buffer
@@ -557,16 +517,15 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
   // Populate the frame
   out.type = frame_type;
   out.seq = seq_num;
-  out.checksum = 0xBEEF; // Just fill in something for now
   out.length = (frame_type == FRAME_TYPE_FRAME) ? pkt_buffer[seq_num].length : 0;
   out.end_of_pkt = pkt_buffer[seq_num].end_of_pkt;
 
-  // TODO:  Make size of ACK frame actually smaller
-
+  // Actually load the payload into the frame, if it's a frame
   if(frame_type == FRAME_TYPE_FRAME)
     memcpy(out.payload, &(pkt_buffer[seq_num].payload), pkt_buffer[seq_num].length);
 
-  out.term = FRAME_TERMINATOR;
+  // THEN compute the checksum.  Doh.  
+  out.checksum = compute_checksum(&out);
 
   printf("DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
 	 get_frame_type(out), out.seq, sizeof(struct frame), out.length);
@@ -577,4 +536,51 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 
   // Send it to the physical layer
   write(fd, &out, sizeof(struct frame));
+}
+
+uint16_t compute_checksum(struct frame *frame)
+{
+  int i = 0, bytes_remaining;
+
+  // Our header has an odd length, so load in one byte to start
+  uint16_t sum = frame->type; 
+
+  char *f_ptr = (char *)&((*frame).seq); // Start summing at the second byte  
+  
+  while(f_ptr != (char *)&((*frame).checksum)) // Add the header bytes (sans the checksum) to the sum
+    {
+      sum += *f_ptr ^ *(f_ptr + 1);
+      f_ptr += 2;
+    }
+
+  // Then add the payload
+  f_ptr = frame->payload;
+  bytes_remaining = frame->length;
+
+  printf("SUM:  Summing:  ");
+  while(bytes_remaining > 1)
+    {
+      printf("%02X %02X  ", *f_ptr, *(f_ptr + 1));
+      sum += *f_ptr ^ *(f_ptr + 1);
+
+      f_ptr +=2;
+      bytes_remaining -= 2;
+    }
+  printf("Done.\n");
+
+  if(bytes_remaining > 0) // Add the leftover byte, if any
+    sum += *f_ptr;
+
+  return sum;
+}
+
+
+/**
+ * die_with_error:  Print out a string and to stderr and then exit
+ * @author ndemarinis
+ */
+void die_with_error(char *msg)
+{
+  fprintf(stderr, "%s\n", msg);
+  exit(2);
 }
