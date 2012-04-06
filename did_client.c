@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 
 #include "layer_stack.h"
+#include "disasterID_sql.h"
 
 #define MAX_MSG_SIZE        12
 #define RECV_BUF_SIZE       32
@@ -22,7 +23,7 @@
 
 //prototypes
 void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num);
-void recieve_packet(int pipes[], struct packet *p);
+void receive_packet(int pipes[], struct packet *p);
 
 int main(int argc, char *argv[]){
     int sock;
@@ -83,7 +84,8 @@ int main(int argc, char *argv[]){
         if (!loggedIn){
             if (strcmp(token, "login") == 0){
                 //process the login command: syntax "login <username>"
-                char* username = strtok(NULL, " \n");
+		char *username = strtok(NULL,"\n");
+
                 p.opcode = 0x01;
 
                 //copy data into the packet
@@ -94,7 +96,7 @@ int main(int argc, char *argv[]){
                 send_packet(pipes, p, &cur_seq_num);
 
                 //wait for the servers response
-                recieve_packet(pipes, &p);
+                receive_packet(pipes, &p);
 
                 //if succesful login
                 if (p.opcode == 5){
@@ -131,7 +133,7 @@ int main(int argc, char *argv[]){
             send_packet(pipes, p, &cur_seq_num);
 
             //wait for the servers response
-            recieve_packet(pipes, &p);
+            receive_packet(pipes, &p);
 
             //if succesful print out the recordID that was just created
             if (p.opcode == 5){
@@ -160,7 +162,7 @@ int main(int argc, char *argv[]){
                 send_packet(pipes, p, &cur_seq_num);
 
                 //wait for the response
-                recieve_packet(pipes, &p);
+                receive_packet(pipes, &p);
 
                 //if succesful print out the records
                 if (p.opcode == 5){
@@ -193,7 +195,7 @@ int main(int argc, char *argv[]){
                 send_packet(pipes, p, &cur_seq_num);
 
                 //wait for the response
-                recieve_packet(pipes, &p);
+                receive_packet(pipes, &p);
 
                 //if succesful print out the records
                 if (p.opcode == 5){
@@ -234,7 +236,7 @@ int main(int argc, char *argv[]){
             send_packet(pipes, p, &cur_seq_num);
 
             //wait for response
-            recieve_packet(pipes, &p);
+            receive_packet(pipes, &p);
 
             if (p.opcode == 5){
                 //success
@@ -304,7 +306,7 @@ int main(int argc, char *argv[]){
                 printf("\tPicture sent!\n");
 
                 //wait for servers response
-                recieve_packet(pipes, &p);
+                receive_packet(pipes, &p);
 
                 if (p.opcode == 5){
                     //success print out the pictureID
@@ -354,14 +356,14 @@ int main(int argc, char *argv[]){
             send_packet(pipes, p, &cur_seq_num);
 
             //wait for response from server
-            recieve_packet(pipes, &p);
+            receive_packet(pipes, &p);
 
             //if not an error then handle it
             if (p.opcode == 5){
-                //this first packet is information about the picture about to be recieved
+                //this first packet is information about the picture about to be received
                 unsigned long sizeOfImage = atol(p.payload);
 
-                //all packets recieved from now on contain image data!
+                //all packets received from now on contain image data!
                 char *filename;
                 //filename will be <pictureID.jpg>
                 strcpy(filename, pictureID);
@@ -371,8 +373,8 @@ int main(int argc, char *argv[]){
 
                 int bytes_processed = 0;
                 while (bytes_processed < sizeOfImage){
-                    //recieve a packet containing image data
-                    recieve_packet(pipes, &p);
+                    //receive a packet containing image data
+                    receive_packet(pipes, &p);
                     //write this data into the file
                     fwrite(p.payload, 1, p.length, picture);
                     //increment bytes_processed so we know how much of the image has been transferred
@@ -402,12 +404,12 @@ int main(int argc, char *argv[]){
 void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num){
     //add the sequence number and then increment
     p.seq_num = *cur_seq_num;
-    *cur_seq_num++;
+    (*cur_seq_num)++;
 
     write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
 }
 
-void recieve_packet(int pipes[], struct packet *p){
+void receive_packet(int pipes[], struct packet *p){
     //Wait for a packet to come in
     read(pipe_read(pipes), p, MAX_PACKET);
 }
