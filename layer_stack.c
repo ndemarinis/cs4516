@@ -39,8 +39,11 @@ struct bidirectional_layer_info dl_info;
 
 pthread_mutex_t net_dl_wire_lock;
 pthread_mutex_t phys_dl_wire_lock;
-int net_to_dl_frame_size = 0;
-int phys_to_dl_frame_size = 0;
+uint32_t net_to_dl_frame_size = 0;
+uint32_t phys_to_dl_frame_size = 0;
+
+int total_frames_sent = 0;
+int total_acks_sent = 0;
 
 // Define a timeval for the maximum timeout
 struct timeval max_wait_time;
@@ -147,8 +150,20 @@ void *init_physical_layer_send(void *info)
       bytes_read = read(fds->in, &frame_out, sizeof(struct frame));
       printf("PHY:  Sending %d bytes\n", bytes_read);
       
-      // Do any necessary processing here
-
+      if(frame_out.type == FRAME_TYPE_FRAME && 
+	 !(++total_frames_sent % FRAME_KILL_EVERY_N_FRAMES))
+	{
+	  printf("PHY:  Injecting error in frame %d\n", frame_out.seq);
+	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
+	}
+#if 0
+      if(frame_out.type == FRAME_TYPE_ACK && 
+	 !(++total_acks_sent % FRAME_KILL_EVERY_N_ACKS))
+	{
+	  printf("PHY:  Injecting error in ACK %d\n", frame_out.seq);
+	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
+	}
+#endif      
       // Send it down to the next pipe, don't block
       if((bytes_sent = send(fds->out, &frame_out, sizeof(struct frame), 0)) <= 0)
 	{
@@ -369,7 +384,6 @@ void *init_data_link_layer(void *info)
 	  recvd_frame = (struct frame *)read_buffer; // We just received a frame, albeit a bad one
 	  printf("DLL:  Got checksum error for %d, expecting seq %d, ACK %d, %d buffered, next %d, dropping frame.\n", 
 		 recvd_frame->type, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
-	  exit(3);
 	  break;
 	  
 	case TIME_OUT: // We lost one
@@ -381,6 +395,7 @@ void *init_data_link_layer(void *info)
 	      send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
 	      next_frame_to_send++;
 	    }
+	  break;
 	default:
 	  printf("DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", frame_expected, frames_buffered, next_frame_to_send, ack_expected);
 	  break;
@@ -496,6 +511,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 	    {
 	      printf("EVENT:  Found TIMEOUT for frame %d with %d buffered.\n", 
 		     expected, frames_buffered);
+	      timerclear(&(window[expected].time_sent));
 	      rv = TIME_OUT;
 	    }
 	}
@@ -540,7 +556,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 
 uint16_t compute_checksum(struct frame *frame)
 {
-  int i = 0, bytes_remaining;
+  int bytes_remaining = frame->length;
 
   // Our header has an odd length, so load in one byte to start
   uint16_t sum = frame->type; 
@@ -553,20 +569,16 @@ uint16_t compute_checksum(struct frame *frame)
       f_ptr += 2;
     }
 
-  // Then add the payload
+  // Then add the payload, if any
   f_ptr = frame->payload;
-  bytes_remaining = frame->length;
 
-  printf("SUM:  Summing:  ");
   while(bytes_remaining > 1)
     {
-      printf("%02X %02X  ", *f_ptr, *(f_ptr + 1));
       sum += *f_ptr ^ *(f_ptr + 1);
 
       f_ptr +=2;
       bytes_remaining -= 2;
     }
-  printf("Done.\n");
 
   if(bytes_remaining > 0) // Add the leftover byte, if any
     sum += *f_ptr;

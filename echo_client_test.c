@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
   if((init_layer_stack(sock, pipes)))
     die_with_error("Layer stack creation failed!");
 
-  sleep(1);
+  sleep(1);  // Wait for the thread creation to settle.  
 
   for(n = 0; n < 1; n++)
     {
