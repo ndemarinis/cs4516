@@ -41,8 +41,8 @@
 
 #define FRAME_TIMEOUT_MS 100
 
-#define FRAME_KILL_EVERY_N_FRAMES 2
-#define FRAME_KILL_EVERY_N_ACKS 2
+#define FRAME_KILL_EVERY_N_FRAMES 6
+#define FRAME_KILL_EVERY_N_ACKS 8
 #define FRAME_KILL_MAGIC 0x0800
 
 // Happy macros for getting the read and write components of a pipe's fd array

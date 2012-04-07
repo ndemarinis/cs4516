@@ -149,21 +149,21 @@ void *init_physical_layer_send(void *info)
       // Get something to send, block if nothing.  
       bytes_read = read(fds->in, &frame_out, sizeof(struct frame));
       printf("PHY:  Sending %d bytes\n", bytes_read);
-      
+
       if(frame_out.type == FRAME_TYPE_FRAME && 
 	 !(++total_frames_sent % FRAME_KILL_EVERY_N_FRAMES))
 	{
 	  printf("PHY:  Injecting error in frame %d\n", frame_out.seq);
 	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	}
-#if 0
+
       if(frame_out.type == FRAME_TYPE_ACK && 
 	 !(++total_acks_sent % FRAME_KILL_EVERY_N_ACKS))
 	{
 	  printf("PHY:  Injecting error in ACK %d\n", frame_out.seq);
 	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	}
-#endif      
+
       // Send it down to the next pipe, don't block
       if((bytes_sent = send(fds->out, &frame_out, sizeof(struct frame), 0)) <= 0)
 	{
@@ -313,8 +313,11 @@ void *init_data_link_layer(void *info)
   uint8_t frame_expected = 0;
   uint8_t ack_expected = 0;
 
-  //struct packet packet_buffer[MAX_SEQ];
+  // Our buffer of outstanding frames waiting for ACKs
   struct frame_window packet_buffer[MAX_SEQ + 1];
+
+  // Maintain as many checksums as our window size to see if we've received any duplicate frames
+  uint16_t last_recvd_frames[MAX_SEQ + 1]; 
 
   memset(packet_buffer, 0, (MAX_SEQ + 1)*sizeof(struct frame_window));
   printf("DLL:  Packet size:  %ld, Frame size:  %ld, Payload size:  %d\n", 
@@ -348,24 +351,43 @@ void *init_data_link_layer(void *info)
 	  next_frame_to_send++;
 
 	  break;
-	case PHYSICAL_FRAME_READY: // Frame is going up, to the network layer
-	  // We just received a frame
-	  recvd_frame = (struct frame *)read_buffer;
+
+	case PHYSICAL_FRAME_READY: // Frame is going up to the network layer
+	  recvd_frame = (struct frame *)read_buffer; // We just received a frame
 	  printf("DLL:  Got a frame from PHY of %d bytes with payload of %d bytes\n", 
 		 bytes_read, recvd_frame->length);
 
 	  // If the frame we just received was what we wanted
-	  if(recvd_frame->type == FRAME_TYPE_FRAME && recvd_frame->seq == frame_expected)
+	  if(recvd_frame->type == FRAME_TYPE_FRAME)
 	    {
-	      printf("DLL:  Frame %d was expected frame %d\n", recvd_frame->seq, frame_expected);
-	      // Send an ACK for that frame
-	      send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, frame_expected);
+	      if(recvd_frame->seq == frame_expected)
+		{
+		  printf("DLL:  Frame %d was expected frame %d\n", recvd_frame->seq, frame_expected);
 
-	      // Send the packet over to the network layer
-	      write(fds->top_out, recvd_frame, sizeof(struct frame));
-	      frame_expected++;
+		  // Record its checksum so we can check for duplicates
+		  last_recvd_frames[frame_expected] = recvd_frame->checksum;
+
+		  // Send an ACK for that frame
+		  send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, frame_expected);
+		  
+		  // Send the packet over to the network layer
+		  write(fds->top_out, recvd_frame, sizeof(struct frame));
+		  frame_expected++;
+		}
+	      else // We may have received a duplicate frame
+		{
+		  printf("DLL:  Received unexpected frame %d, was expecting %d\n", 
+			 recvd_frame->seq, frame_expected);
+
+		  // If we find it in our buffer of last few checksums, it's a duplicate, so ACK it again
+		  for(i = 0; i < MAX_SEQ + 1; i++)
+		    if(recvd_frame->checksum == last_recvd_frames[i])
+		      {
+			printf("DLL:  Sending duplicate ACK for frame %d\n", recvd_frame->seq);
+			send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, recvd_frame->seq);
+		      }
+		}
 	    }
-	  
 	  // If it wasn't, it was probably an ACK
 	  else if(recvd_frame->type == FRAME_TYPE_ACK && recvd_frame->seq == ack_expected) 
 	    {

@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 
   sleep(1);  // Wait for the thread creation to settle.  
 
-  for(n = 0; n < 1; n++)
+  for(n = 0; n < 5; n++)
     {
       printf("\nSending a new string of length %d bytes...\n", echo_str_len);
       if(echo_str_len > PACKET_PAYLOAD_SIZE)
