@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 
   for(n = 0; n < 5; n++)
     {
-      printf("\nSending a new string of length %d bytes...\n", echo_str_len);
+      printf("\n\nSending a new string of length %d bytes...\n", echo_str_len);
       if(echo_str_len > PACKET_PAYLOAD_SIZE)
 	die_with_error("String too large for one packet!");
 

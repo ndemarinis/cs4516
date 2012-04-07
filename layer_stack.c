@@ -490,10 +490,11 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 
   // Try to read from our input pipe, but don't block if nothing's there
   pthread_mutex_lock(&net_dl_wire_lock);
-  if(net_to_dl_frame_size && frames_buffered < MAX_SEQ)
+  if(net_to_dl_frame_size && frames_buffered < (MAX_SEQ + 1))
     {
       bytes_read = read(net_fd, buffer, sizeof(struct packet_segment));
-      printf("EVENT:  Got into NET, read %d bytes.\n", bytes_read);
+      printf("EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
+	     bytes_read, frames_buffered);
       net_to_dl_frame_size -= bytes_read;
       rv = NETWORK_FRAME_READY;
     }
