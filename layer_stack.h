@@ -29,7 +29,7 @@
 #define MAX_FRAME_SIZE 158
 #define MAX_PACKET_SIZE 260
 
-#define MAX_SEQ 15
+#define MAX_SEQ 1
 
 #define FRAME_TYPE_FRAME 0xBE
 #define FRAME_TYPE_ACK   0xEF

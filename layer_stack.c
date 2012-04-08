@@ -422,7 +422,7 @@ void *init_data_link_layer(void *info)
 	  printf("DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", frame_expected, frames_buffered, next_frame_to_send, ack_expected);
 	  break;
 	}
-
+#if 0
       // Handle wraparound
       if(next_frame_to_send > MAX_SEQ)
 	{
@@ -439,7 +439,7 @@ void *init_data_link_layer(void *info)
 	  printf("DLL:  Wrapping frame expected:  %d\n", frame_expected);
 	  frame_expected = 0;
 	}
-      
+#endif      
     }
 }
 

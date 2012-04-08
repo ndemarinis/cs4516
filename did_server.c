@@ -109,8 +109,8 @@ void *handle_client(void *data)
 
       pkt_in = (struct packet *)read_buffer;
 
-      printf("APP:  Read packet of %d bytes with payload of %d bytes:  %s\n", 
-	     to_read, pkt_in->length, pkt_in->payload);
+      printf("APP:  Read packet of %d bytes with payload of %d bytes\n", 
+	     to_read, pkt_in->length);
 
       // Send it straight back
       printf("APP:  Sending packet of %d bytes back to client\n", to_read);
