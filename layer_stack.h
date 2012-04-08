@@ -29,7 +29,8 @@
 #define MAX_FRAME_SIZE 158
 #define MAX_PACKET_SIZE 260
 
-#define MAX_SEQ 1
+#define MAX_SEQ 255
+#define SLIDING_WINDOW_SIZE 15
 
 #define FRAME_TYPE_FRAME 0xBE
 #define FRAME_TYPE_ACK   0xEF
