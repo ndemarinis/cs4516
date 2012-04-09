@@ -176,10 +176,10 @@ int main(int argc, char *argv[]){
 			    //parse the string of data back into a response structure
 			    char *tmp = strtok(p.payload, ",");
 			    while(tmp){
-				char *recordID;
+				char recordID[10];
 				strcpy(recordID, tmp);
 				tmp = strtok(NULL, ",");
-				char *location;
+				char location[37];
 				strcpy(location, tmp);
 				tmp = strtok(NULL, ",");
 				printf("\t\tRecordID: %s\tLocation: %s\n", recordID, location);
@@ -414,10 +414,10 @@ void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num){
     p.seq_num = *cur_seq_num;
     (*cur_seq_num)++;
 
-    write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
+    write(pipe_write(pipes), &p, sizeof(struct packet));
 }
 
 void receive_packet(int pipes[], struct packet *p){
     //Wait for a packet to come in
-    read(pipe_read(pipes), p, MAX_PACKET);
+    read(pipe_read(pipes), p, sizeof(struct packet));
 }
