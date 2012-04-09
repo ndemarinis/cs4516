@@ -34,7 +34,6 @@ void print_layer_stack_statistics(struct layer_stack *stack);
 
 // Create space for all of the info we need to send to each thread in each stack
 struct layer_stack stack_info[MAX_CLIENTS];
-
 struct layer_info net_send_info, net_recv_info; // FDs for each end of the pipe for each layer
 struct layer_info phys_send_info, phys_recv_info;
 struct bidirectional_layer_info dl_info;
@@ -216,23 +215,27 @@ void *init_physical_layer_send(void *info)
 	}
       dprintf(DID_INFO, "PHY:  Sending %d bytes\n", bytes_read);
 
-      if(frame_out.type == FRAME_TYPE_FRAME && 
-	 !(++((fds->stack)->total_frames_sent) % FRAME_KILL_EVERY_N_FRAMES))
+      if(frame_out.type == FRAME_TYPE_FRAME) 
 	{
-	  dprintf(DID_DLL_INFO, "PHY:  Injecting error in frame %d\n", frame_out.seq);
-	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
+	  if(!(++((fds->stack)->total_frames_sent) % FRAME_KILL_EVERY_N_FRAMES))
+	    {
+	      dprintf(DID_DLL_INFO, "PHY:  Injecting error in frame %d\n", frame_out.seq);
+	      frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
+	    }
+	  else
+	    (fds->stack)->total_good_frames_sent++;
 	}
-      else
-	(fds->stack)->total_good_frames_sent++;
 
-      if(frame_out.type == FRAME_TYPE_ACK && 
-	 !(++((fds->stack)->total_acks_sent) % FRAME_KILL_EVERY_N_ACKS))
+      if(frame_out.type == FRAME_TYPE_ACK)
 	{
-	  dprintf(DID_DLL_INFO, "PHY:  Injecting error in ACK %d\n", frame_out.seq);
-	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
+	  if(!(++((fds->stack)->total_acks_sent) % FRAME_KILL_EVERY_N_ACKS))
+	    {
+	      dprintf(DID_DLL_INFO, "PHY:  Injecting error in ACK %d\n", frame_out.seq);
+	      frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
+	    }
+	  else
+	    (fds->stack)->total_good_acks_sent++;
 	}
-      else
-	(fds->stack)->total_good_acks_sent++;
 
       // Send it down to the next pipe, don't block
       if((bytes_sent = send(fds->out, &frame_out, sizeof(struct frame), 0)) <= 0)

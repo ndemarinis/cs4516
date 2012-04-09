@@ -50,11 +50,12 @@ void return_error(int pipes[], int error_code, uint16_t *cur_seq_num);
 void return_response(int pipes[], char *payload, uint16_t *cur_seq_num);
 
 // Globals
+int curr_clients = 0;
 struct client_handler_data client_data[MAX_CLIENTS];
 
 int main(int argc, char *argv[])
 {
-    int srv_sock, clnt_sock, curr_clients = 0;
+    int srv_sock, clnt_sock = 0;
     unsigned int clnt_len;
     struct sockaddr_in srv_addr, clnt_addr;
 
@@ -89,8 +90,10 @@ int main(int argc, char *argv[])
         client_data[curr_clients].sock = clnt_sock;
 
         if(curr_clients < MAX_CLIENTS)
+	  {
             pthread_create(&(threads[curr_clients]), NULL, handle_client, 
                             (void *)(&(client_data[curr_clients])));
+	  }
         else
             die_with_error("Too many clients!");
     }
