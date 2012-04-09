@@ -52,7 +52,7 @@
 #define PACKET_OVERHEAD 4
 #define MAX_PAYLOAD 252
 
-#define DID_DEBUG_LEVEL 5
+#define DID_DEBUG_LEVEL 0
 
 // Various debugging levels
 #define DID_CRIT 0
