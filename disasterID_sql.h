@@ -1,3 +1,9 @@
+/**
+ * Header file for interacting with the SQL database.
+ *
+ * @author Ian Lonergan
+ */
+
 #ifndef __DISASTERID_SQL
 #define __DISASTERID_SQL
 

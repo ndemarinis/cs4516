@@ -11,18 +11,18 @@
 #include "disasterID_sql.h"
 
 #define __LOGIN_SQL "SELECT name FROM tblUsers WHERE name=?"
-#define __NAME_SIZE 15
 #define __CREATE_RECORD_SQL "INSERT INTO tblBodies (first_name, last_name, location) VALUES (?,?,?)"
-#define __FIRST_NAME_SIZE 15
-#define __LAST_NAME_SIZE 20
-#define __LOCATION_SIZE 36
 #define __QUERY_RECORD_BY_NAME_SQL "SELECT * FROM tblBodies WHERE first_name = ? AND last_name = ?"
-#define __ID_SIZE 9
 #define __QUERY_RECORD_BY_LOCATION_SQL "SELECT * FROM tblBodies WHERE location = ?"
 #define __UPDATE_RECORD_NAME_SQL "UPDATE tblBodies SET first_name=?, last_name=? WHERE id_number=?"
 #define __ADD_PICTURE_SQL "INSERT INTO tblPictures (first_name, last_name, data) VALUES (?,?,?)"
 #define __QUERY_PICTURE_SQL "SELECT data FROM tblPictures WHERE id_number = ? ORDER BY id_number LIMIT 1"
 #define __CONNECT_PICTURE_TO_RECORD_SQL "INSERT INTO tblPictureIdentified (picture_id, body_id) VALUES (?,?)"
+#define __NAME_SIZE 15
+#define __FIRST_NAME_SIZE 15
+#define __LAST_NAME_SIZE 20
+#define __LOCATION_SIZE 36
+#define __ID_SIZE 9
 #define __MAX_IMAGE_SIZE 1024*1000
 
 //Server Information
@@ -37,6 +37,7 @@ char *database = "disasterid5";
  *
  * @author Ian Lonergan
  * @param name login name
+ * @return 0 if successful
  */
 int login (char *name)
 {
@@ -113,6 +114,7 @@ int login (char *name)
  * @param lastName Last name of the body
  * @param location Location the body was found
  * @param response pre-allocated char array of size[10] to hold new record ID
+ * @return 0 if successful
  */
 int createRecord(char *firstName, char *lastName, char *location, char *response)
 {
@@ -187,6 +189,7 @@ int createRecord(char *firstName, char *lastName, char *location, char *response
  * @param firstName First name of the body
  * @param lastName Last name of the body
  * @param response List of body entries that match the given first and last name
+ * @return 0 if successful
  */
 int queryRecordByName(char *firstName, char *lastName, bodyEntry **response)
 {
@@ -305,6 +308,7 @@ int queryRecordByName(char *firstName, char *lastName, bodyEntry **response)
  * @author Ian Lonergan
  * @param location Location the body was found at
  * @param response List of body entries with a matching location
+ * @return 0 if successful
  */
 int queryRecordByLocation(char *location, bodyEntry **response)
 {
@@ -418,6 +422,7 @@ int queryRecordByLocation(char *location, bodyEntry **response)
  * @param recordID ID of the record to change
  * @param firstName First name of the body
  * @param lastName Last name of the body
+ * @return 0 if successful
  */
 int updateRecordName(int recordID, char *firstName, char *lastName)
 {
@@ -489,6 +494,7 @@ int updateRecordName(int recordID, char *firstName, char *lastName)
  * @param lastName Last name of the person pictured
  * @param buffer Character array holding the raw data for the image
  * @param response pre-allocated char array of size[10] to hold new picture ID
+ * @return 0 if successful
  */
 int addPicture(char *firstName, char *lastName, char *buffer, char *response)
 {
@@ -561,6 +567,7 @@ int addPicture(char *firstName, char *lastName, char *buffer, char *response)
  * @author Ian Lonergan
  * @param pictureID ID of the picture to return
  * @param buffer Pre-allocated 1MB character array to hold the picture data
+ * @return 0 if successful
  */
 int queryPicture(int pictureID, char *buffer)
 {
@@ -639,6 +646,7 @@ int queryPicture(int pictureID, char *buffer)
  * @author Ian Lonergan
  * @param pictureID ID of the picture
  * @param bodyID ID of the body
+ * @return 0 if successful
  */
 int connectPictureToRecord(int pictureID, int bodyID)
 {
@@ -694,40 +702,14 @@ int connectPictureToRecord(int pictureID, int bodyID)
 	return 0;
 }
 
+/**
+ * Closes the connection to the server.
+ *
+ * @author Ian Lonergan
+ * @return 0 if successful
+ */
 int logout()
 {
     mysql_close(conn);
     return 0;
 }
-
-/*
-int main(int argc, char **argv)
-{
-
-	char *response = malloc(10 * sizeof(char));
-	bodyEntry *bodyEntryList1,*bodyEntryList2;
-	
-	int retVal = login("Ian");
-	printf("Login retVal: %d\n",retVal);
-	
-	retVal = createRecord(NULL, NULL, "Location", response);
-	printf("Create retVal: %d\nCreate Response: %s\n",retVal,response);
-	
-	retVal = queryRecordByName("First","Last", &bodyEntryList1);
-	printf("query1 retVal: %d\n",retVal);
-	
-	retVal = queryRecordByLocation("Location", &bodyEntryList2);
-	printf("query2 retVal: %d\n",retVal);
-	
-	retVal = updateRecordName(15, "FirstUp", NULL);
-	printf("update1 retVal: %d\n",retVal);
-	
-	retVal = updateRecordName(16, NULL, "LastUp");
-	printf("update2 retVal: %d\n",retVal);
-	
-	retVal = updateRecordName(14, "FirstUp", "LastUp");
-	printf("update3 retVal: %d\n",retVal);
-
-	return 0;
-}
-*/

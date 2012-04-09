@@ -20,7 +20,7 @@ did_client.o: did_client.c layer_stack.h disasterID_sql.h
 	$(CC) -c -g did_client.c
 
 disasterID_sql.o: disasterID_sql.c disasterID_sql.h
-	$(CC) -I/usr/local/mysql-current/include -c disasterID_sql.c 
+	$(CC) -I/usr/local/mysql-current/include -g -c disasterID_sql.c 
 
 clean:
 	rm -fv did_server.o layer_stack.o disasterID_sql.o did_server did_client.o did_client
