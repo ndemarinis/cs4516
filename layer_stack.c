@@ -541,23 +541,44 @@ void *init_physical_layer_recv(void *info)
   int bytes_read, bytes_written;
   struct layer_info *fds = (struct layer_info *)info;
 
-  char recv_buffer[sizeof(struct frame)];
+  uint8_t type_recvd;
+  char *recv_buffer;
+  int bytes_to_read = 0;
+ 
   struct frame frame_in;
-  struct ack *ack_in;
+  struct ack ack_in;
 
   printf("PHY:  Thread created!\n");
 
   while(1)
     {
       memset(&frame_in, 0, sizeof(struct frame));
-      memset(recv_buffer, 0, sizeof(struct frame));
+      memset(&ack_in, 0, sizeof(struct ack));
 
       // Try to receive, block if necessary
-      // TODO:  Handle errors/terminating more gracefully.  
-      if((bytes_read = recv(fds->in, recv_buffer, sizeof(struct frame), 0)) <= 0) 
+      if((bytes_read = recv(fds->in, &type_recvd, sizeof(uint8_t), MSG_PEEK)) < 1)
+	{
+	  dprintf(DID_INFO, "PHY:  Didn't read 1 byte!\n");
+	  break;
+	}
+
+      if(type_recvd == FRAME_TYPE_FRAME)
+	{
+	  recv_buffer = (char *)&frame_in;
+	  bytes_to_read = sizeof(struct frame);
+	}
+      else if(type_recvd == FRAME_TYPE_ACK)
+	{
+	  recv_buffer = (char *)&ack_in;
+	  bytes_to_read = sizeof(struct ack);
+	}
+      else
+	dprintf(DID_INFO, "PHY:  NO IDEA what I just recvd.\n");
+
+      if((bytes_read = recv(fds->in, recv_buffer, bytes_to_read, 0)) <= 0) 
 	{
 	  dprintf(DID_INFO, "PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
-		 bytes_read, strerror(errno));
+		  bytes_read, strerror(errno));
 	  close(fds->in);
 	  break;
 	}
@@ -565,18 +586,17 @@ void *init_physical_layer_recv(void *info)
       dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
 	       bytes_read, frame_in.length);
 
-      if(((struct frame *)recv_buffer)->type == FRAME_TYPE_FRAME)
+      if(type_recvd == FRAME_TYPE_FRAME)
 	{
 	  dprintf(DID_INFO, "PHY:  Got FRAME\n");
 	  memcpy(&frame_in, recv_buffer, sizeof(struct frame));
 	}
-      else if(((struct ack *)recv_buffer)->type == FRAME_TYPE_ACK)
+      else if(type_recvd == FRAME_TYPE_ACK)
 	{
 	  dprintf(DID_INFO, "PHY:  Got ACK\n");
-	  ack_in = (struct ack *)recv_buffer;
-	  frame_in.type = ack_in->type;
-	  frame_in.seq = ack_in->seq;
-	  frame_in.checksum = ack_in->checksum;
+	  frame_in.type = ack_in.type;
+	  frame_in.seq = ack_in.seq;
+	  frame_in.checksum = ack_in.checksum;
 	}
       else
 	dprintf(DID_INFO, "PHY:  NO IDEA what I just received.\n");
