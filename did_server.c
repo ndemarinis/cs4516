@@ -121,7 +121,7 @@ void *handle_client(void *data){
     struct packet response_p;
     while(1){
         //Wait for a packet to come in
-        bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
+        bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
 
         int opcode = client_p.opcode;
         //login
@@ -177,8 +177,9 @@ void *handle_client(void *data){
                 char *firstName = strtok(NULL, ",");
                 char *lastName = strtok(NULL, "");
                 
+		int respCount;
                 //get the query response from the database
-                resp = queryRecordByName(firstName, lastName, &responses);
+                resp = queryRecordByName(firstName, lastName, &responses, &respCount);
 
                 //if resp is not 0 then an error occured
                 if (resp){
@@ -186,13 +187,13 @@ void *handle_client(void *data){
                     return_error(pipes, resp, &cur_seq_num);
                 } else {
                     //send the information back to the client!
-                    int total_responses = sizeof(responses) / sizeof(responses[0]);
-                    char *response = "";
-                    int i;
-                    for (i = 0; i < total_responses; i++){
-                        int rID = responses[i].id;
-                        char *recordID;
-                        sprintf(recordID, "%d", rID);
+                    char response[respCount*(16+20+36+3)];
+		    memset(response,0,sizeof(response));
+                    int i, rID;
+		    char recordID[10];
+                    for (i = 0; i < respCount; i++){
+                        rID = responses[i].id;
+                        sprintf(recordID, "%09d", rID);
                         strcat(response, recordID);
                         strcat(response, ",");
                         strcat(response, responses[i].location);
@@ -204,8 +205,9 @@ void *handle_client(void *data){
                 //handle queries by location
                 char *location = strtok(NULL, "");
 
+		int respCount;
                 //get the query response from the database
-                resp = queryRecordByLocation(location, &responses);
+                resp = queryRecordByLocation(location, &responses, &respCount);
 
                 //if resp is not 0 then an error occured
                 if (resp){
@@ -213,13 +215,13 @@ void *handle_client(void *data){
                     return_error(pipes, resp, &cur_seq_num);
                 } else {
                     //send the information back to the client!
-                    int total_responses = sizeof(responses) / sizeof(responses[0]);
-                    char *response = "";
-                    int i;
-                    for (i = 0; i < total_responses; i++){
-                        int rID = responses[i].id;
-                        char *recordID;
-                        sprintf(recordID, "%d", rID);
+                    char response[respCount*(16+20+36+3)];
+		    memset(response,0,sizeof(response));
+                    int i, rID;
+		    char recordID[10];
+                    for (i = 0; i < respCount; i++){
+                        rID = responses[i].id;
+                        sprintf(recordID, "%09d", rID);
                         strcat(response, recordID);
                         strcat(response, ",");
                         strcat(response, responses[i].firstName);
@@ -270,7 +272,7 @@ void *handle_client(void *data){
             //start recieving the picture data, continue until this entire picture has been recieved
             while(i < size - 1){
                 //read in a new packet of data
-                bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
+                bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
                 //store the picture data into the array
                 memcpy(pictureData + i, client_p.payload, bytes_read);
                 //increment i by the length of the payload

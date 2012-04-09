@@ -25,8 +25,8 @@ typedef struct
 
 int login (char *);
 int createRecord(char *, char *, char *, char *);
-int queryRecordByName(char *, char *, bodyEntry **);
-int queryRecordByLocation(char *, bodyEntry **);
+int queryRecordByName(char *, char *, bodyEntry **, int *);
+int queryRecordByLocation(char *, bodyEntry **, int *);
 int updateRecordName(int, char *, char *);
 int addPicture(char *, char *, char *, char *);
 int queryPicture(int, char *);

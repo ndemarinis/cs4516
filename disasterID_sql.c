@@ -191,7 +191,7 @@ int createRecord(char *firstName, char *lastName, char *location, char *response
  * @param response List of body entries that match the given first and last name
  * @return 0 if successful
  */
-int queryRecordByName(char *firstName, char *lastName, bodyEntry **response)
+int queryRecordByName(char *firstName, char *lastName, bodyEntry *response[], int *numRet)
 {
 	MYSQL_STMT *stmt;
 	MYSQL_BIND bind[2];
@@ -284,9 +284,10 @@ int queryRecordByName(char *firstName, char *lastName, bodyEntry **response)
 		return 1;
 	}
 	
-	int numRows = mysql_stmt_num_rows(stmt);
-	bodyEntry responseTest[numRows];
-	
+	*numRet = mysql_stmt_num_rows(stmt);
+	bodyEntry *responseTest = (bodyEntry *)malloc(*numRet * sizeof(bodyEntry));
+	memset(responseTest,0,sizeof(responseTest));
+
 	int count = 0;
 	while (!mysql_stmt_fetch(stmt))
 	{
@@ -310,7 +311,7 @@ int queryRecordByName(char *firstName, char *lastName, bodyEntry **response)
  * @param response List of body entries with a matching location
  * @return 0 if successful
  */
-int queryRecordByLocation(char *location, bodyEntry **response)
+int queryRecordByLocation(char *location, bodyEntry **response, int *numRet)
 {
 	MYSQL_STMT *stmt;
 	MYSQL_BIND bind[1];
@@ -397,8 +398,9 @@ int queryRecordByLocation(char *location, bodyEntry **response)
 		return 1;
 	}
 	
-	int numRows = mysql_stmt_num_rows(stmt);
-	bodyEntry responseTest[numRows];
+	*numRet = mysql_stmt_num_rows(stmt);
+	bodyEntry *responseTest = (bodyEntry *)malloc(*numRet * sizeof(bodyEntry));
+	memset(responseTest,0,sizeof(responseTest));
 	
 	int count = 0;
 	while (!mysql_stmt_fetch(stmt))
