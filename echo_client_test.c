@@ -30,9 +30,8 @@ int main(int argc, char *argv[])
 {
   int n;
   int sock, bytes_recvd;
-  unsigned int echo_str_len;
   char *srv_ip, *echo_str;
-  
+  unsigned int echo_str_len;
   struct hostent *srv_host;
   struct sockaddr_in srv_addr;
 

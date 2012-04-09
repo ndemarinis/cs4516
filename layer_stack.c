@@ -214,12 +214,12 @@ void *init_physical_layer_send(void *info)
 	  printf("PHY:  Read %d bytes from APP.  Pipe was probably closed.  Terminating!\n", bytes_read);
 	  break;
 	}
-      printf("PHY:  Sending %d bytes\n", bytes_read);
+      dprintf(DID_INFO, "PHY:  Sending %d bytes\n", bytes_read);
 
       if(frame_out.type == FRAME_TYPE_FRAME && 
 	 !(++((fds->stack)->total_frames_sent) % FRAME_KILL_EVERY_N_FRAMES))
 	{
-	  printf("PHY:  Injecting error in frame %d\n", frame_out.seq);
+	  dprintf(DID_DLL_INFO, "PHY:  Injecting error in frame %d\n", frame_out.seq);
 	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	}
       else
@@ -228,7 +228,7 @@ void *init_physical_layer_send(void *info)
       if(frame_out.type == FRAME_TYPE_ACK && 
 	 !(++((fds->stack)->total_acks_sent) % FRAME_KILL_EVERY_N_ACKS))
 	{
-	  printf("PHY:  Injecting error in ACK %d\n", frame_out.seq);
+	  dprintf(DID_DLL_INFO, "PHY:  Injecting error in ACK %d\n", frame_out.seq);
 	  frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	}
       else
@@ -268,7 +268,7 @@ void *init_network_layer_send(void *info)
       // Grab something to process
       if((bytes_read = read(fds->in, &pkt_in, sizeof(struct packet))) <= 0)
 	break;
-      printf("NET:  Read packet of %d bytes with payload of %d bytes\n", 
+      dprintf(DID_INFO, "NET:  Read packet of %d bytes with payload of %d bytes\n", 
 	     bytes_read, pkt_in.length + 1);
 
       total_pkt_len = pkt_in.length + 1 + 
@@ -276,7 +276,7 @@ void *init_network_layer_send(void *info)
 
       if(pkt_in.length + 1 <= FRAME_PAYLOAD_SIZE)
 	{
-	  printf("NET:  Constructed segment 1 of length %d byteswith payload of %d bytes.\n", 
+	  dprintf(DID_INFO, "NET:  Constructed segment 1 of length %d byteswith payload of %d bytes.\n", 
 		 total_pkt_len, pkt_in.length);
 	  memcpy(s1.payload, &pkt_in, total_pkt_len);
 	  s1.length = total_pkt_len;
@@ -284,14 +284,14 @@ void *init_network_layer_send(void *info)
 	}
       else // We need >1 frame
 	{
-	  printf("NET:  Constructed segment 1 with payload of %d bytes.\n", 
+	  dprintf(DID_INFO, "NET:  Constructed segment 1 with payload of %d bytes.\n", 
 		 FRAME_PAYLOAD_SIZE);
 
 	  memcpy(s1.payload, &pkt_in, FRAME_PAYLOAD_SIZE);
 	  s1.length = FRAME_PAYLOAD_SIZE;
 	  s1.end_of_pkt = FRAME_NOT_EOP;
 	  	  
-	  printf("NET:  Constructed segment 2 with payload of %d bytes.\n", 
+	  dprintf(DID_INFO, "NET:  Constructed segment 2 with payload of %d bytes.\n", 
 		 total_pkt_len - FRAME_PAYLOAD_SIZE);
 
 	  memcpy(s2.payload, (pkt + FRAME_PAYLOAD_SIZE), 
@@ -306,13 +306,13 @@ void *init_network_layer_send(void *info)
       
       bytes_written = write(fds->out, &s1, sizeof(struct packet_segment));
       net_to_dl_frame_size += bytes_written;
-      printf("NET:  Sent first segment of %d bytes\n", bytes_written);
+      dprintf(DID_INFO, "NET:  Sent first segment of %d bytes\n", bytes_written);
 
       if(pkt_in.length > FRAME_PAYLOAD_SIZE) // Send the second frame, if necessary
 	{
 	  bytes_written = write(fds->out, &s2, sizeof(struct packet_segment));
 	  net_to_dl_frame_size += bytes_written;
-	  printf("NET:  Sent second segment of %d bytes\n", bytes_written);
+	  dprintf(DID_INFO, "NET:  Sent second segment of %d bytes\n", bytes_written);
 	}
 
       pthread_mutex_unlock(&net_dl_wire_lock);
@@ -342,12 +342,12 @@ void *init_network_layer_recv(void *info)
 
       // Grab a segment to process
       bytes_read = read(fds->in, &f1, sizeof(struct frame));
-      printf("NET:  Received frame of %d bytes with payload of %d bytes\n", bytes_read, f1.length);
+      dprintf(DID_INFO, "NET:  Received frame of %d bytes with payload of %d bytes\n", bytes_read, f1.length);
 
       if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
 	  bytes_read = read(fds->in, &f2, sizeof(struct frame));
-	  printf("NET:  Received second frame of %d bytes with payload of %d bytes\n", 
+	  dprintf(DID_INFO, "NET:  Received second frame of %d bytes with payload of %d bytes\n", 
 		 bytes_read, f2.length);
 	}
       
@@ -356,7 +356,7 @@ void *init_network_layer_recv(void *info)
 
       if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
-	  printf("NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
+	  dprintf(DID_INFO, "NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
 		 f2.length, f1.length);
 	  memcpy(pkt + f1.length, &(f2.payload), f2.length);
 	}
@@ -405,7 +405,7 @@ void *init_data_link_layer(void *info)
       switch(event)
 	{
 	case NETWORK_FRAME_READY: // We just received a frame, 
-	  printf("DLL:  Got a frame %d from NET of %d bytes with %d currently buffered.\n", 
+	  dprintf(DID_DLL_INFO, "DLL:  Got a frame %d from NET of %d bytes with %d currently buffered.\n", 
 		 next_frame_to_send, bytes_read, frames_buffered);
 	  
 	  recvd_segment = (struct packet_segment *)read_buffer;
@@ -425,7 +425,7 @@ void *init_data_link_layer(void *info)
 
 	case PHYSICAL_FRAME_READY: // Frame is going up to the network layer
 	  recvd_frame = (struct frame *)read_buffer; // We just received a frame
-	  printf("DLL:  Got a frame from PHY of %d bytes with payload of %d bytes\n", 
+	  dprintf(DID_DLL_INFO, "DLL:  Got a frame from PHY of %d bytes with payload of %d bytes\n", 
 		 bytes_read, recvd_frame->length);
 
 	  // If the frame we just received was what we wanted
@@ -433,7 +433,7 @@ void *init_data_link_layer(void *info)
 	    {
 	      if(recvd_frame->seq == frame_expected)
 		{
-		  printf("DLL:  Frame %d was expected frame %d\n", recvd_frame->seq, frame_expected);
+		  dprintf(DID_DLL_INFO, "DLL:  Frame %d was expected frame %d\n", recvd_frame->seq, frame_expected);
 
 		  // Record its checksum so we can check for duplicates
 		  last_recvd_frames[frame_expected] = recvd_frame->checksum;
@@ -451,7 +451,7 @@ void *init_data_link_layer(void *info)
 		}
 	      else // We may have received a duplicate frame
 		{
-		  printf("DLL:  Received unexpected frame %d, was expecting %d\n", 
+		  dprintf(DID_DLL_INFO, "DLL:  Received unexpected frame %d, was expecting %d\n", 
 			 recvd_frame->seq, frame_expected);
 
 		  // If we find it in our buffer of last few checksums, it's a duplicate, so ACK it again
@@ -459,7 +459,7 @@ void *init_data_link_layer(void *info)
 		    if(recvd_frame->checksum == last_recvd_frames[i])
 		      {
 			(fds->stack)->total_dup_frames_recvd++;
-			printf("DLL:  Sending duplicate ACK for frame %d\n", recvd_frame->seq);
+			dprintf(DID_DLL_INFO, "DLL:  Sending duplicate ACK for frame %d\n", recvd_frame->seq);
 			send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, recvd_frame->seq);
 		      }
 		}
@@ -474,18 +474,18 @@ void *init_data_link_layer(void *info)
 
 	      (fds->stack)->total_good_acks_recvd++;
 
-	      printf("DLL:  Received ACK for frame %d, now %d frames in buffer\n", 
+	      dprintf(DID_DLL_INFO, "DLL:  Received ACK for frame %d, now %d frames in buffer\n", 
 		     recvd_frame->seq, frames_buffered);
 
 	    }
 	  else // If not, drop the frame	  
-	    printf("DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
+	    dprintf(DID_DLL_INFO, "DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
 		   recvd_frame->type, recvd_frame->seq, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
 	  break;
 
 	case CHECKSUM_ERROR:
 	  recvd_frame = (struct frame *)read_buffer; // We just received a frame, albeit a bad one
-	  printf("DLL:  Got checksum error for %d, expecting seq %d, ACK %d, %d buffered, next %d, dropping frame.\n", 
+	  dprintf(DID_DLL_INFO, "DLL:  Got checksum error for %d, expecting seq %d, ACK %d, %d buffered, next %d, dropping frame.\n", 
 		 recvd_frame->type, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
 	  
 	  // Update our counters
@@ -496,7 +496,7 @@ void *init_data_link_layer(void *info)
 	  break;
 	  
 	case TIME_OUT: // We lost one
-	  printf("DLL:  Caught timeout for frame %d\n", ack_expected);
+	  dprintf(DID_DLL_INFO, "DLL:  Caught timeout for frame %d\n", ack_expected);
 	  next_frame_to_send = ack_expected; // Start retransmitting from there
 	  for(i = 1; i <= frames_buffered; i++)
 	    {
@@ -506,7 +506,7 @@ void *init_data_link_layer(void *info)
 	    }
 	  break;
 	default:
-	  printf("DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", frame_expected, frames_buffered, next_frame_to_send, ack_expected);
+	  dprintf(DID_WARN, "DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", frame_expected, frames_buffered, next_frame_to_send, ack_expected);
 
 	}
     }
@@ -533,13 +533,13 @@ void *init_physical_layer_recv(void *info)
       // TODO:  Handle errors/terminating more gracefully.  
       if((bytes_read = recv(fds->in, &frame_in, sizeof(struct frame), 0)) <= 0) 
 	{
-	  printf("PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
+	  dprintf(DID_INFO, "PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
 		 bytes_read, strerror(errno));
 	  close(fds->in);
 	  break;
 	}
       else
-	printf("PHY:  Received frame of %d bytes with payload of %d bytes\n", 
+	dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
 	       bytes_read, frame_in.length);
       
       // Send it down to the next pipe
@@ -564,10 +564,10 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 
   // Try to read from our input pipe, but don't block if nothing's there
   pthread_mutex_lock(&net_dl_wire_lock);
-  if(net_to_dl_frame_size && frames_buffered < (MAX_SEQ + 1))
+  if(net_to_dl_frame_size && frames_buffered < (SLIDING_WINDOW_SIZE + 1))
     {
       bytes_read = read(net_fd, buffer, sizeof(struct packet_segment));
-      printf("EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
+      dprintf(DID_DLL_INFO, "EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
 	     bytes_read, frames_buffered);
       net_to_dl_frame_size -= bytes_read;
       rv = NETWORK_FRAME_READY;
@@ -581,7 +581,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
       if(phys_to_dl_frame_size)
 	{
 	  bytes_read = read(phys_fd, buffer, sizeof(struct frame));
-	  printf("EVENT:  Got into PHYS, read %d bytes.\n", bytes_read);
+	  dprintf(DID_DLL_INFO, "EVENT:  Got into PHYS, read %d bytes.\n", bytes_read);
 	  phys_to_dl_frame_size -= bytes_read;
 	  rv = PHYSICAL_FRAME_READY;
 	}
@@ -591,7 +591,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 	{
 	  // Verify the frame we just received matches the checksum
 	  checksum = compute_checksum(recvd_frame);
-	  printf("EVENT:  Got checksum:  %04X vs %04X\n", checksum, recvd_frame->checksum);
+	  dprintf(DID_DLL_INFO, "EVENT:  Got checksum:  %04X vs %04X\n", checksum, recvd_frame->checksum);
 	  if(checksum != recvd_frame->checksum)
 	    rv = CHECKSUM_ERROR;
 	}
@@ -606,7 +606,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 	  timersub(&curr_time, &(window[expected].time_sent), &diff_time);
 	  if(timercmp(&diff_time, &max_wait_time, >))
 	    {
-	      printf("EVENT:  Found TIMEOUT for frame %d with %d buffered.\n", 
+	      dprintf(DID_DLL_INFO, "EVENT:  Found TIMEOUT for frame %d with %d buffered.\n", 
 		     expected, frames_buffered);
 	      timerclear(&(window[expected].time_sent));
 	      rv = TIME_OUT;
@@ -640,7 +640,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
   // THEN compute the checksum.  Doh.  
   out.checksum = compute_checksum(&out);
 
-  printf("DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
+  dprintf(DID_DLL_INFO, "DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
 	 get_frame_type(out), out.seq, sizeof(struct frame), out.length);
 
   // Start the timer by recording when we sent this frame (if it's an actual frame)

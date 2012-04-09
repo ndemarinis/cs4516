@@ -32,9 +32,7 @@ unsigned int fsize(char* filename);
 
 int main(int argc, char *argv[])
 {
-  int n;
   int sock, bytes_recvd, file_len, bytes_remaining, len;
-  unsigned int echo_str_len;
   char *srv_ip, *file_name, *out_name;
   FILE *fp_in, *fp_out;
   
@@ -51,7 +49,7 @@ int main(int argc, char *argv[])
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
-	      "Usage:  %s <Server IP> <Echo word>\n", argv[0]);
+	      "Usage:  %s <Server IP> <picture filename (limit 100kb)> <dest>\n", argv[0]);
       exit(1);
     }
 

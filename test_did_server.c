@@ -39,8 +39,6 @@ int main(int argc, char *argv[])
   unsigned int clnt_len;
   struct sockaddr_in srv_addr, clnt_addr;
 
-  pthread_t threads[MAX_CLIENTS];
-
   // Create our listen socket
   if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
     die_with_error("socket() failed!");
@@ -93,7 +91,6 @@ int main(int argc, char *argv[])
 void *handle_client(void *data)
 {
   struct client_handler_data *clnt = (struct client_handler_data *)data;
-  struct layer_stack *stack; // Pointer to statistics and such from the layer stack
   int pipes[2]; // Make a pipe to connect to the layer stack
 
   int to_read, bytes_written;

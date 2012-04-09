@@ -41,7 +41,7 @@
 
 #define FRAME_TERMINATOR 0x03
 
-#define FRAME_TIMEOUT_MS 100
+#define FRAME_TIMEOUT_MS 250
 
 #define FRAME_KILL_EVERY_N_FRAMES 6
 #define FRAME_KILL_EVERY_N_ACKS 8
@@ -55,6 +55,7 @@
 #define DID_DEBUG_LEVEL 5
 
 // Various debugging levels
+#define DID_CRIT 0
 #define DID_INFO 4
 #define DID_WARN 2
 #define DID_DLL_INFO 3
@@ -63,7 +64,7 @@
 #define pipe_read(x) (x[0])
 #define pipe_write(x) (x[1])
 
-#define dprintf(level, format, ...) if(level <= DEBUG_LEVEL) printf(format, ##__VA_ARGS__)
+#define dprintf(level, format, ...) if(level <= DID_DEBUG_LEVEL) printf(format, ##__VA_ARGS__)
 
 enum frame_event { PHYSICAL_FRAME_READY, NETWORK_FRAME_READY, CHECKSUM_ERROR, TIME_OUT, NOP };
 
