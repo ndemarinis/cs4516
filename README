@@ -1,1 +1,94 @@
-Hello world!  
+README
+Nicholas DeMarinis
+8 April 2012
+
+Compilation Instructions
+
+This archive contains source files for the Disaster Identification
+Database (DID) client and server.  For convenience, a Makefile has
+been provided; to build the client and server, which compile to
+did_client and did_server, respectively, simply run `make`.  To build
+these binaries with debugging symbols and print statements, run `make
+test` (after running `make clean`, if the binaries have already been
+compiled).  In addition, two simple tests of the layer stack and a
+test server have been provided for demonstration purposes.  To build
+these binaries, which compile to test_did_server, echo_client_test,
+and picture_client_test, respectively, simply run `make tests`.
+
+The server test binary can be invoked as is with no command line
+arguments; the client binary can be invoked as follows:  
+  ./did_client <host>
+
+where host is some hostname running the server.  
+
+Client Syntax
+
+As a proof of concept implementation, this application layer for the
+DID client and server supports commands with the syntax as defined in
+the provided Syntax.txt.
+
+Implementation Details
+
+The following aspects of this impelementation have changed from the design report:  
+   - Application Layer
+	- Application layer command syntax has been more clearly
+	defined.  For details, see Syntax.txt.
+	
+	- The packet header no longer contains the maximum sequence
+	number; as suggested, this was deemed unnecessary.
+
+	- Support for multiple clients is currently nonfunctional.
+	While the thread-creation procedures are functional, the application
+	layer's methods for string processing in the client and server are 
+	not thread-safe.  As such, the maximum number of clients has been
+	set to 1.  Given more time, this implementation could be easily 
+	refactored for thread-safety.  
+
+  - Layer Stack (Network, DL, Physical Layers)
+	- Interlayer communication was handled using pipes between
+	each thread, as opposed to the proposed blocking function call
+	implementation.  This provides a concurrent, pipelined system between
+	the layers.  To avoid the need to use select() or unpredictable
+	nonblocking sockets, the network and physical layers are implemented
+	as two threads each, one for the sending and receiving component.
+	Each thread can then block on its own accord without affecting other
+	operations.  The DLL was implemented as a single thread, a counter is
+	maintained for the number of bytes in each blocking pipe the DLL must
+	read.  When this counter is controlled with a mutex, the DLL thread
+	can check if data is available before blocking and act accordingly.  
+	
+	- Packets and frames are defined as specified in the design
+	report, but the number of bytes sent and received is rounded up to the
+	number of bytes of the struct created by gcc.  In order to
+	keep this implementation simple, the extra 2 or so bytes was deemed 
+	an acceptable tradeoff.   As an overlay network created as a proof of 
+	concept, the performance loss does not present an issue.  
+
+ 	- Frames were originally specified to be transmitted using
+	byte stuffing.	As noted in the comments received on the design
+	report, this process was deemed unnecessary.  Instead, frames and ACKs
+	are always transmitted at their maximum length.  Again, this serves to
+	keep the assignment simple:  Linux socket calls and pipes can easily 
+	send/receive a specific number of bytes.  While it is specified that 
+	Linux file descriptors and sockets can write/read numbers of bytes less
+ 	than their specified amounts, but this proved dangerously unpredictable
+	with the defined pipe implementation.  As the layer stack was developed
+	incrementally, this behavior was defined first with the goal of removing
+	the restriction before the limitation of the pies could be fully realized.  
+	With an expanded timeframe, this implementation could be refactored to
+	maximize performance.  However, given the limitations of this proof of
+	concept assignment, the padded implementation proved both safe and feasible
+	in the given timeframe.  
+
+	- The original design report specification outlined that the network and
+	application layers would likely be implemented as a single process.  In this
+	implementation, this is partially true, as the application layer forms messages
+	directly into packet payloads.  Instead of forming packets from messages, the 
+	"network" layer solely handles breaking the packets info frame-payload-sized
+	"segments" to be processed by the Data Link Layer.  This may not fulfill the
+	true definition of the network layer, but the threads provide a critical layer
+	of packet processing for this implementation that would be tedious to handle
+	at the application layer.  
+
+
+
