@@ -269,9 +269,9 @@ void *handle_client(void *data){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
                 //store the picture data into the array
-                pictureData[i] = client_p.payload[0];
+                memcpy(pictureData + i, client_p.payload, bytes_read);
                 //increment i by the length of the payload
-                i += client_p.length;
+                i += bytes_read;
             }
 
             char *response;

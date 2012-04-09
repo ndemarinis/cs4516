@@ -19,7 +19,7 @@
 #define RECV_BUF_SIZE       32
 #define DID_DEFAULT_PORT    4516
 
-#define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
+//#define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
 
 //prototypes
 void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num);
@@ -80,6 +80,7 @@ int main(int argc, char *argv[]){
         
         //time to handle the command... create a packet that may be used
         struct packet p;
+	memset(&p, 0, sizeof(struct packet));
         //handle the login command
         if (!loggedIn){
             if (strcmp(token, "login") == 0){
@@ -285,7 +286,8 @@ int main(int argc, char *argv[]){
                 //note this uses the same packet pointer the entire time so the opcode does not need to be set again
                 while(!feof(picture)){
                     //read at most 251 bytes of the picture into the packets payload
-                    int readSize = fread(p.payload, 1, MAX_PAYLOAD, picture);
+		    memset(&(p.payload),0,sizeof(p.payload));
+                    int readSize = fread(p.payload, sizeof(char), MAX_PAYLOAD, picture);
                     //if there was no error then add the sequence number and the length to the packet then send it
                     //DO NOT SET THE SEND FLAG, this will handle it on its own since there could be multiple sends
                     if (!ferror(picture)){
@@ -295,7 +297,7 @@ int main(int argc, char *argv[]){
                         p.length = (uint8_t)readSize;
 
                         //send this packet down to the data link layer
-                        write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
+                        write(pipe_write(pipes), &p, sizeof(struct packet));
                     } else {
                         printf("\tError sending picture!");
                         break;

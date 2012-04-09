@@ -19,7 +19,7 @@
 #define LAYER_STACK_H
 
 
-#define PIPE_BUFFER_SIZE 128
+#define PIPE_BUFFER_SIZE 512
 #define MAX_CLIENTS 5
 #define MAX_PACKET 256
 #define PACKET_OVERHEAD 4

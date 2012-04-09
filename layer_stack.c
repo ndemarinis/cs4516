@@ -121,7 +121,7 @@ void *init_physical_layer_send(void *info)
 
       // Get something to send, block if nothing.  
       bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE);
-      //printf("PHY:  Sending %d bytes:  %s\n", bytes_read, read_buffer);
+      printf("PHY:  Sending %d bytes:  %s\n", bytes_read, read_buffer);
       
       // Do any necessary processing here
 
@@ -151,7 +151,7 @@ void *init_network_layer_send(void *info)
 
       // Grab something to process
       bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE);
-      //printf("NET:  Sending %d bytes:  %s\n", bytes_read, read_buffer);
+      printf("NET:  Sending %d bytes:  %s\n", bytes_read, read_buffer);
       
       // Send it down to the next pipe
       write(fds->out, read_buffer, bytes_read);
@@ -174,7 +174,7 @@ void *init_network_layer_recv(void *info)
 
       // Grab something to process  
       bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE);
-      //printf("NET:  Received %d bytes:  %s\n", bytes_read, read_buffer);
+      printf("NET:  Received %d bytes:  %s\n", bytes_read, read_buffer);
       
       // Send it down to the next pipe
       write(fds->out, read_buffer, bytes_read);
@@ -198,7 +198,7 @@ void *init_data_link_layer_send(void *info)
 
       // Grab something to process
       bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE);
-      //printf("DLL:  Sending %d bytes:  %s\n", bytes_read, read_buffer);
+      printf("DLL:  Sending %d bytes:  %s\n", bytes_read, read_buffer);
       
       // Send it down to the next pipe
       write(fds->out, read_buffer, bytes_read);
@@ -221,7 +221,7 @@ void *init_data_link_layer_recv(void *info)
 
       // Grab something to process
       bytes_read = read(fds->in, read_buffer, PIPE_BUFFER_SIZE);
-      //printf("DLL:  Received %d bytes:  %s\n", bytes_read, read_buffer);
+      printf("DLL:  Received %d bytes:  %s\n", bytes_read, read_buffer);
       
       // Send it down to the next pipe
       write(fds->out, read_buffer, bytes_read);
@@ -251,7 +251,7 @@ void *init_physical_layer_recv(void *info)
 	  exit(2);
 	}
       else
-	//printf("PHY:  Received %d bytes:  %s\n", bytes_read, read_buffer);
+	printf("PHY:  Received %d bytes:  %s\n", bytes_read, read_buffer);
       
       // Send it down to the next pipe
       write(fds->out, read_buffer, bytes_read);
