@@ -656,7 +656,9 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
       if(rv == PHYSICAL_FRAME_READY) // If our call just found a frame
 	{
 	  // Verify the frame we just received matches the checksum
-	  checksum = compute_checksum(recvd_frame);
+	  // If it's an ACK, the "checksum" is the sequence number
+	  checksum = (recvd_frame->type == FRAME_TYPE_FRAME) ? 
+	    compute_checksum(recvd_frame) : recvd_frame->seq;
 	  dprintf(DID_DLL_INFO, "EVENT:  Got checksum:  %04X vs %04X\n", checksum, recvd_frame->checksum);
 	  if(checksum != recvd_frame->checksum)
 	    rv = CHECKSUM_ERROR;
@@ -701,10 +703,14 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
 
   // Actually load the payload into the frame, if it's a frame
   if(frame_type == FRAME_TYPE_FRAME)
-    memcpy(out.payload, &(pkt_buffer[seq_num].payload), pkt_buffer[seq_num].length);
-
-  // THEN compute the checksum.  Doh.  
-  out.checksum = compute_checksum(&out);
+    {
+      memcpy(out.payload, &(pkt_buffer[seq_num].payload), pkt_buffer[seq_num].length);
+      
+      // THEN compute the checksum.  Doh.  
+      out.checksum = compute_checksum(&out);
+    }
+  else
+    out.checksum = seq_num; // ACK checksum is just the sequence number again
 
   dprintf(DID_DLL_INFO, "DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
 	 get_frame_type(out), out.seq, sizeof(struct frame), out.length);
