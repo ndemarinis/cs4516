@@ -550,18 +550,22 @@ void *init_physical_layer_recv(void *info)
 
   printf("PHY:  Thread created!\n");
 
-  while(1)
+  for(;;)
     {
+      // Clear out buffers
+      type_recvd = 0;
       memset(&frame_in, 0, sizeof(struct frame));
       memset(&ack_in, 0, sizeof(struct ack));
 
-      // Try to receive, block if necessary
-      if((bytes_read = recv(fds->in, &type_recvd, sizeof(uint8_t), MSG_PEEK)) < 1)
+      // Read one byte without removing it from the queue, just to check the type
+      // Based on this, we know how much to read next
+      if((bytes_read = recv(fds->in, &type_recvd, sizeof(uint8_t), MSG_PEEK)) <= 0)
 	{
 	  dprintf(DID_INFO, "PHY:  Didn't read 1 byte!\n");
 	  break;
 	}
 
+      // So, based on that, set the appropriate struct and length to read
       if(type_recvd == FRAME_TYPE_FRAME)
 	{
 	  recv_buffer = (char *)&frame_in;
@@ -575,6 +579,7 @@ void *init_physical_layer_recv(void *info)
       else
 	dprintf(DID_INFO, "PHY:  NO IDEA what I just recvd.\n");
 
+      // ... and then try to read it from the socket.  
       if((bytes_read = recv(fds->in, recv_buffer, bytes_to_read, 0)) <= 0) 
 	{
 	  dprintf(DID_INFO, "PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
@@ -583,17 +588,19 @@ void *init_physical_layer_recv(void *info)
 	  break;
 	}
      
-      dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
-	       bytes_read, frame_in.length);
-
+      // So now package the frame/ack for transmission to the DLL
+      // For a frame, this means nothing; for an ACK, we need to load it into the frame
+      // struct to keep the pipes happy
       if(type_recvd == FRAME_TYPE_FRAME)
 	{
-	  dprintf(DID_INFO, "PHY:  Got FRAME\n");
+	  dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
+	       bytes_read, frame_in.length);
+
 	  memcpy(&frame_in, recv_buffer, sizeof(struct frame));
 	}
       else if(type_recvd == FRAME_TYPE_ACK)
 	{
-	  dprintf(DID_INFO, "PHY:  Got ACK\n");
+	  dprintf(DID_INFO, "PHY:  Received ACK %d of %d bytes\n", ack_in.seq, bytes_read);
 	  frame_in.type = ack_in.type;
 	  frame_in.seq = ack_in.seq;
 	  frame_in.checksum = ack_in.checksum;
