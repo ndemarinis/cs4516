@@ -269,15 +269,27 @@ void *handle_client(void *data){
             //create an array capable of holding the entire image
             char pictureData[size];
             int i = 0;
+
+	    // DEBUG:  Write out the file as we read it
+	    FILE *out = fopen("server_output.png", "w+");
+
             //start recieving the picture data, continue until this entire picture has been recieved
             while(i < size - 1){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
                 //store the picture data into the array
                 memcpy(pictureData + i, client_p.payload, client_p.length);
+
+		// DEBUG write to the test file
+		write(fileno(out), client_p.payload, client_p.length);
+
                 //increment i by the length of the payload
-                i += bytes_read;
+                i += client_p.length;
             }
+
+	    // DEBUG:  Close that file
+	    fflush(out);
+	    fclose(out);	    
 
             char *response;
             int resp = addPicture(firstName, lastName, pictureData, response);

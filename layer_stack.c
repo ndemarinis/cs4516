@@ -561,7 +561,8 @@ void *init_physical_layer_recv(void *info)
       // Based on this, we know how much to read next
       if((bytes_read = recv(fds->in, &type_recvd, sizeof(uint8_t), MSG_PEEK)) <= 0)
 	{
-	  dprintf(DID_INFO, "PHY:  Didn't read 1 byte!\n");
+	  dprintf(DID_INFO, "PHY:  Read %d bytes:  %s.  Terminating!\n", 
+		  bytes_read, strerror(errno));
 	  break;
 	}
 

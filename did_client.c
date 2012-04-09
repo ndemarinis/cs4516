@@ -289,7 +289,8 @@ int main(int argc, char *argv[]){
 			
 			//read into packets and send them until the end of file is reached
 			//note this uses the same packet pointer the entire time so the opcode does not need to be set again
-			while(!feof(picture)){
+			int read = 0;
+			while(read < sizeInBytes){
 			    //read at most 251 bytes of the picture into the packets payload
 			    memset(&(p.payload),0,sizeof(p.payload));
 			    int readSize = fread(p.payload, sizeof(char), MAX_PAYLOAD, picture);
@@ -302,6 +303,7 @@ int main(int argc, char *argv[]){
 				p.length = (uint8_t)readSize;
 
 				//send this packet down to the data link layer
+				read += MAX_PAYLOAD;
 				write(pipe_write(pipes), &p, sizeof(struct packet));
 			    } else {
 				printf("\tError sending picture!");
