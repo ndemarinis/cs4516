@@ -22,7 +22,7 @@
 
 #define PIPE_BUFFER_SIZE 2048
 #define MAX_CLIENTS 5
-#define PACKET_OVERHEAD 6
+
 
 #define PACKET_PAYLOAD_SIZE 256
 #define FRAME_PAYLOAD_SIZE  150
@@ -52,11 +52,18 @@
 #define PACKET_OVERHEAD 4
 #define MAX_PAYLOAD 252
 
+#define DID_DEBUG_LEVEL 5
 
+// Various debugging levels
+#define DID_INFO 4
+#define DID_WARN 2
+#define DID_DLL_INFO 3
 
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
 #define pipe_write(x) (x[1])
+
+#define dprintf(level, format, ...) if(level <= DEBUG_LEVEL) printf(format, ##__VA_ARGS__)
 
 enum frame_event { PHYSICAL_FRAME_READY, NETWORK_FRAME_READY, CHECKSUM_ERROR, TIME_OUT, NOP };
 

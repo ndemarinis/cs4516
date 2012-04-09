@@ -2,6 +2,7 @@
 * did_server.c
 * Nicholas DeMarinis
 * Eric Prouty
+* Ian Lonergan
 * 29 March 2012
 */
 
@@ -14,10 +15,27 @@
 #include <sys/socket.h>
 
 #include "layer_stack.h"
+#include "disasterID_sql.h"
 
 #define DID_DEFAULT_PORT 4516
 #define MAX_PENDING 2
 #define MAX_CLIENTS 5
+
+#define __PIC_TOO_LARGE_CODE 0x01
+#define __NO_PIC_ID_CODE 0x02
+#define __NO_BODY_ID_CODE 0x03
+#define __NOT_AUTHORIZED_CODE 0x04
+#define __OK_CODE 0x05
+#define __OK_MESSAGE_CODE 0x06
+
+#define __LOGIN_CODE 1
+#define __CREATE_CODE 2
+#define __QUERY_CODE 3
+#define __UPDATE_CODE 4
+#define __ADD_PIC_CODE 5
+#define __QUERY_PIC_CODE 8
+#define __CONNECT_PIC_CODE 6
+#define __LOGOUT_CODE 7
 
 // Struct for data we send to the client handler
 struct client_handler_data
@@ -93,7 +111,7 @@ void *handle_client(void *data){
     uint16_t cur_seq_num = 0;
 
     create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
-    sleep(1); // Wait a second for the threads to settle
+    sleep(1); // Wait a second for the thread creation to settle
 
     int bytes_read;
     struct packet client_p;
@@ -104,7 +122,7 @@ void *handle_client(void *data){
 
         int opcode = client_p.opcode;
         //login
-        if (opcode == 1){
+        if (opcode == __LOGIN_CODE){
             //payload is just the username for this opcode
             if(login(client_p.payload) == 0){
                 //response code for SUCCESS
@@ -117,7 +135,7 @@ void *handle_client(void *data){
                 send_packet(pipes, response_p);
             } else {
                 //basic response packet signaling invailed login
-                response_p.opcode = 0x04;
+                response_p.opcode = __NOT_AUTHORIZED_CODE;
                 response_p.seq_num = cur_seq_num;
                 cur_seq_num++;
                 response_p.length = 0;
@@ -125,14 +143,14 @@ void *handle_client(void *data){
                 send_packet(pipes, response_p);
             }
         //create record
-        } else if (opcode == 2){
+        } else if (opcode == __CREATE_CODE){
             //payload syntax "<firstName>,<lastName>,<location>"
             char *firstName = strtok(client_p.payload, ",");
             char *lastName = strtok(NULL, ",");
             char *location = strtok(NULL, "");
 
             //replace null with proper response once I determine what its for!
-            char *response;
+            char *response = malloc(10*sizeof(response));
             int resp = createRecord(firstName, lastName, location, response);
             //if a 0 was not returned an error occured
             if (resp) {
@@ -143,12 +161,12 @@ void *handle_client(void *data){
                 return_response(pipes, response, &cur_seq_num);
             }
         //query record
-        } else if (opcode == 3){
+        } else if (opcode == __QUERY_CODE){
             //payload syntax "NAME:<firstName>,<lastName>"
             //               "LOCATION:<location>"
             char *queryType = strtok(client_p.payload, ":");
 
-            struct response *responses;
+            bodyEntry *responses;
             int resp;
             //two types of query name and location
             if (strcmp(queryType, "NAME") == 0){
@@ -157,7 +175,7 @@ void *handle_client(void *data){
                 char *lastName = strtok(NULL, "");
                 
                 //get the query response from the database
-                resp = queryRecordByName(firstName, lastName, responses);
+                resp = queryRecordByName(firstName, lastName, &responses);
 
                 //if resp is not 0 then an error occured
                 if (resp){
@@ -169,7 +187,7 @@ void *handle_client(void *data){
                     char *response = "";
                     int i;
                     for (i = 0; i < total_responses; i++){
-                        int rID = responses[i].recordID;
+                        int rID = responses[i].id;
                         char *recordID;
                         sprintf(recordID, "%d", rID);
                         strcat(response, recordID);
@@ -184,7 +202,7 @@ void *handle_client(void *data){
                 char *location = strtok(NULL, "");
 
                 //get the query response from the database
-                resp = queryRecordByLocation(location, responses);
+                resp = queryRecordByLocation(location, &responses);
 
                 //if resp is not 0 then an error occured
                 if (resp){
@@ -196,7 +214,7 @@ void *handle_client(void *data){
                     char *response = "";
                     int i;
                     for (i = 0; i < total_responses; i++){
-                        int rID = responses[i].recordID;
+                        int rID = responses[i].id;
                         char *recordID;
                         sprintf(recordID, "%d", rID);
                         strcat(response, recordID);
@@ -210,7 +228,7 @@ void *handle_client(void *data){
                 }
             }
         //update record
-        } else if (opcode == 4){
+        } else if (opcode == __UPDATE_CODE){
             //payload syntax "<recordId>,<firstName>,<lastName>"
             char *recordId = strtok(client_p.payload, ",");
             char *firstName = strtok(NULL, ",");
@@ -230,7 +248,7 @@ void *handle_client(void *data){
                 return_response(pipes, "", &cur_seq_num);
             }
         //add picture
-        } else if (opcode == 5){
+        } else if (opcode == __ADD_PIC_CODE){
             /*payload syntax 1st   packet:   "<firstName>,<lastName>,<imageSize>"
                              2nd+ packets:   "<pictureData>"
                              These picture data packets will continue until the entirety of the picture has been transmitted
@@ -251,9 +269,9 @@ void *handle_client(void *data){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
                 //store the picture data into the array
-                pictureData[i] = client_p.payload[0];
+                memcpy(pictureData + i, client_p.payload, bytes_read);
                 //increment i by the length of the payload
-                i += client_p.length;
+                i += bytes_read;
             }
 
             char *response;
@@ -267,7 +285,7 @@ void *handle_client(void *data){
                 return_response(pipes, response, &cur_seq_num);
             }
         //connect picture
-        } else if (opcode == 6){
+        } else if (opcode == __CONNECT_PIC_CODE){
             //payload syntax "<pictureID>,<recordID>"
             char *pictureID = strtok(client_p.payload, ",");
             char *recordID = strtok(NULL, "");
@@ -285,12 +303,13 @@ void *handle_client(void *data){
                 return_response(pipes, "", &cur_seq_num);
             }
         //logout!
-        } else if (opcode == 7){
+        } else if (opcode == __LOGOUT_CODE){
             //payload syntax NONE
             //break out of the while loop containin this and allow the thread processing this client to exit
+	    logout();
             break;
         //download picture
-        } else if (opcode == 8){
+        } else if (opcode == __QUERY_PIC_CODE){
             //payload syntax "<pictureID>"
             char *pictureID = strtok(client_p.payload, "");
             int pID = atoi(pictureID);
@@ -370,7 +389,7 @@ void return_error(int pipes[], int error_code, uint16_t *cur_seq_num){
     //send an error back!
     p.opcode = error_code;
     p.seq_num = *cur_seq_num;
-    *cur_seq_num++;
+    (*cur_seq_num)++;
     p.length = 0;
     send_packet(pipes, p);
 }
@@ -381,7 +400,7 @@ void return_response(int pipes[], char *payload, uint16_t *cur_seq_num){
     //set response code for success!
     p.opcode = 0x05;
     p.seq_num = *cur_seq_num;
-    *cur_seq_num++;
+    (*cur_seq_num)++;
     //add the payload into the packet
     strcpy(p.payload, payload);
     p.length = strlen(p.payload);
@@ -389,3 +408,4 @@ void return_response(int pipes[], char *payload, uint16_t *cur_seq_num){
     //send the response
     send_packet(pipes, p);
 }
+
