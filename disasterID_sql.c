@@ -47,7 +47,7 @@ int login (char *name)
 	//MYSQL_RES *result;
 	
 	//Setup connection and return error if something goes wrong
-	conn = mysql_init(conn);
+	conn = mysql_init(NULL);
 	if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0))
 	{
 		mysql_close(conn);
