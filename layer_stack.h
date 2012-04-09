@@ -47,6 +47,11 @@
 #define FRAME_KILL_EVERY_N_ACKS 8
 #define FRAME_KILL_MAGIC 0x0800
 
+// Possibly dangerous APP layer constants
+#define MAX_PACKET 256
+#define PACKET_OVERHEAD 4
+#define MAX_PAYLOAD 252
+
 
 
 // Happy macros for getting the read and write components of a pipe's fd array
@@ -54,6 +59,15 @@
 #define pipe_write(x) (x[1])
 
 enum frame_event { PHYSICAL_FRAME_READY, NETWORK_FRAME_READY, CHECKSUM_ERROR, TIME_OUT, NOP };
+
+
+struct response {
+    int recordID;
+    char *firstName;
+    char *lastName;
+    char *location;
+};
+
 
 // Info we pass to the thread that creates/watches the layer stack
 struct stack_create_info

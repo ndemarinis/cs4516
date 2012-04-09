@@ -1,8 +1,9 @@
 /*
- * did_server.c
- * Nicholas DeMarinis
- * 29 March 2012
- */
+* did_server.c
+* Nicholas DeMarinis
+* Eric Prouty
+* 29 March 2012
+*/
 
 #include <stdio.h>
 #include <errno.h>
@@ -21,117 +22,370 @@
 // Struct for data we send to the client handler
 struct client_handler_data
 {
-  int sock; // Just the client's fd, for now
-  pthread_t client_handler;
-  struct layer_stack *stack;
+    int sock; // Just the client's fd, for now
 };
-
 
 // Prototypes
 void *handle_client(void *data);
+void send_packet(int pipes[], struct packet p);
+void return_error(int pipes[], int error_code, uint16_t *cur_seq_num);
+void return_response(int pipes[], char *payload, uint16_t *cur_seq_num);
 
 // Globals
 struct client_handler_data client_data[MAX_CLIENTS];
 
 int main(int argc, char *argv[])
 {
-  int srv_sock, clnt_sock, curr_clients = 0;
-  unsigned int clnt_len;
-  struct sockaddr_in srv_addr, clnt_addr;
+    int srv_sock, clnt_sock, curr_clients = 0;
+    unsigned int clnt_len;
+    struct sockaddr_in srv_addr, clnt_addr;
 
-  pthread_t threads[MAX_CLIENTS];
+    pthread_t threads[MAX_CLIENTS];
 
-  // Create our listen socket
-  if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
-    die_with_error("socket() failed!");
+    // Create our listen socket
+    if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+        die_with_error("socket() failed!");
 
-  // Create the address structure
-  memset(&srv_addr, 0, sizeof(srv_addr));
-  srv_addr.sin_family = AF_INET;
-  srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  srv_addr.sin_port = htons(DID_DEFAULT_PORT);
+    // Create the address structure
+    memset(&srv_addr, 0, sizeof(srv_addr));
+    srv_addr.sin_family = AF_INET;
+    srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    srv_addr.sin_port = htons(DID_DEFAULT_PORT);
 
-  setvbuf(stdout, NULL, _IONBF, 0);
+    // Bind to the address we just specified
+    if((bind(srv_sock, (struct sockaddr *)(&srv_addr), sizeof(srv_addr)) < 0))
+        die_with_error("bind() failed!\n");
 
-  // Bind to the address we just specified
-  if((bind(srv_sock, (struct sockaddr *)(&srv_addr), sizeof(srv_addr)) < 0))
-    die_with_error("bind() failed!\n");
+    // Listen for connections
+    if((listen(srv_sock, MAX_PENDING) < 0))
+        die_with_error("listen() failed!");
 
-  // Listen for connections
-  if((listen(srv_sock, MAX_PENDING) < 0))
-    die_with_error("listen() failed!");
-
-  for(;;)
+    for(;;)
     {
-      // When we receive a connection from a a client, make a new thread to handle them
-      clnt_len = sizeof(clnt_addr);
-      
-      if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
-	die_with_error("accept() failed!");
-      
-      client_data[curr_clients].sock = clnt_sock;
+        // When we receive a connection from a a client, make a new thread to handle them
+        clnt_len = sizeof(clnt_addr);
 
-      if(curr_clients < MAX_CLIENTS)
-	pthread_create(&(client_data[curr_clients].client_handler), NULL, handle_client, 
-		       (void *)(&(client_data[curr_clients])));
-      else
-	die_with_error("Too many clients!");
+        if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
+        die_with_error("accept() failed!");
 
-      curr_clients++;
+        client_data[curr_clients].sock = clnt_sock;
+
+        if(curr_clients < MAX_CLIENTS)
+            pthread_create(&(threads[curr_clients]), NULL, handle_client, 
+                            (void *)(&(client_data[curr_clients])));
+        else
+            die_with_error("Too many clients!");
     }
-  
-  // We should never reach this.  Yet.
-  pthread_exit(NULL);
-  exit(0);
+
+    // We should never reach this.  Yet.
+    pthread_exit(NULL);
+    exit(0);
 }
 
 
 /**
- * handle_client:  Main application layer thread for each client
- * @author ndemarinis (Basic implementation)
- */
-void *handle_client(void *data)
-{
-  struct client_handler_data *clnt = (struct client_handler_data *)data;
-  struct layer_stack *stack; // Pointer to statistics and such from the layer stack
-  int pipes[2]; // Make a pipe to connect to the layer stack
+* handle_client:  Main application layer thread for each client
+* @author ndemarinis (Basic implementation)
+*/
+void *handle_client(void *data){
+    struct client_handler_data *clnt = (struct client_handler_data *)data;
+    int pipes[2]; // Make a pipe to connect to the layer stack
+    uint16_t cur_seq_num = 0;
 
-  int to_read, bytes_written;
-  char read_buffer[PIPE_BUFFER_SIZE];
-  struct packet* pkt_in;
+    create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+    sleep(1); // Wait a second for the threads to settle
 
-  memset(read_buffer, 0, PIPE_BUFFER_SIZE);
-  
-  create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
-  sleep(1); // Wait for the layer stack creation to settle
+    int bytes_read;
+    struct packet client_p;
+    struct packet response_p;
+    while(1){
+        //Wait for a packet to come in
+        bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
 
-  for(;;)
-    {
-      // Just try and echo a message for now.
-      printf("APP:  Starting a test read.\n\n");
+        int opcode = client_p.opcode;
+        //login
+        if (opcode == 1){
+            //payload is just the username for this opcode
+            if(login(client_p.payload) == 0){
+                //response code for SUCCESS
+                response_p.opcode = 0x05;
+                response_p.seq_num = cur_seq_num;
+                cur_seq_num++;
+                //no payload basic success response!
+                response_p.length = 0;
 
-      // Grab a string
-      if((to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE)) <= 0)
-	{
-	  printf("APP:  Read 0 bytes from socket.  Terminating!\n");
-	  break;
-	}
+                send_packet(pipes, response_p);
+            } else {
+                //basic response packet signaling invailed login
+                response_p.opcode = 0x04;
+                response_p.seq_num = cur_seq_num;
+                cur_seq_num++;
+                response_p.length = 0;
 
-      pkt_in = (struct packet *)read_buffer;
+                send_packet(pipes, response_p);
+            }
+        //create record
+        } else if (opcode == 2){
+            //payload syntax "<firstName>,<lastName>,<location>"
+            char *firstName = strtok(client_p.payload, ",");
+            char *lastName = strtok(NULL, ",");
+            char *location = strtok(NULL, "");
 
-      printf("APP:  Read packet of %d bytes with payload of %d bytes\n", 
-	     to_read, pkt_in->length);
+            //replace null with proper response once I determine what its for!
+            char *response;
+            int resp = createRecord(firstName, lastName, location, response);
+            //if a 0 was not returned an error occured
+            if (resp) {
+                //send an error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //send back the data
+                return_response(pipes, response, &cur_seq_num);
+            }
+        //query record
+        } else if (opcode == 3){
+            //payload syntax "NAME:<firstName>,<lastName>"
+            //               "LOCATION:<location>"
+            char *queryType = strtok(client_p.payload, ":");
 
-      // Send it straight back
-      printf("APP:  Sending packet of %d bytes back to client\n", to_read);
-      if((bytes_written = write(pipe_write(pipes), read_buffer, to_read)) <= 0)
-	{
-	  printf("APP:  Wrote %d bytes, socket must have closed.  Terminating!\n", bytes_written);
-	  break;
-	}
+            struct response *responses;
+            int resp;
+            //two types of query name and location
+            if (strcmp(queryType, "NAME") == 0){
+                //handle queries by name
+                char *firstName = strtok(NULL, ",");
+                char *lastName = strtok(NULL, "");
+                
+                //get the query response from the database
+                resp = queryRecordByName(firstName, lastName, responses);
+
+                //if resp is not 0 then an error occured
+                if (resp){
+                    //send an error back!
+                    return_error(pipes, resp, &cur_seq_num);
+                } else {
+                    //send the information back to the client!
+                    int total_responses = sizeof(responses) / sizeof(responses[0]);
+                    char *response = "";
+                    int i;
+                    for (i = 0; i < total_responses; i++){
+                        int rID = responses[i].recordID;
+                        char *recordID;
+                        sprintf(recordID, "%d", rID);
+                        strcat(response, recordID);
+                        strcat(response, ",");
+                        strcat(response, responses[i].location);
+                        strcat(response, ",");
+                    }
+                    return_response(pipes, response, &cur_seq_num);
+                }
+            } else if (strcmp(queryType, "LOCATION") == 0){
+                //handle queries by location
+                char *location = strtok(NULL, "");
+
+                //get the query response from the database
+                resp = queryRecordByLocation(location, responses);
+
+                //if resp is not 0 then an error occured
+                if (resp){
+                    //send an error back!
+                    return_error(pipes, resp, &cur_seq_num);
+                } else {
+                    //send the information back to the client!
+                    int total_responses = sizeof(responses) / sizeof(responses[0]);
+                    char *response = "";
+                    int i;
+                    for (i = 0; i < total_responses; i++){
+                        int rID = responses[i].recordID;
+                        char *recordID;
+                        sprintf(recordID, "%d", rID);
+                        strcat(response, recordID);
+                        strcat(response, ",");
+                        strcat(response, responses[i].firstName);
+                        strcat(response, ",");
+                        strcat(response, responses[i].lastName);
+                        strcat(response, ",");
+                    }
+                    return_response(pipes, response, &cur_seq_num);
+                }
+            }
+        //update record
+        } else if (opcode == 4){
+            //payload syntax "<recordId>,<firstName>,<lastName>"
+            char *recordId = strtok(client_p.payload, ",");
+            char *firstName = strtok(NULL, ",");
+            char *lastName = strtok(NULL, "");
+
+            //convert recordID into an integer
+            int rId = atoi(recordId);
+            int resp = updateRecordName(rId, firstName, lastName);
+
+            //if resp is not 0 then an error occured
+            if (resp){
+                //send an error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //send the information back to the client!
+                //basic success packet so an empty string is given for the payload
+                return_response(pipes, "", &cur_seq_num);
+            }
+        //add picture
+        } else if (opcode == 5){
+            /*payload syntax 1st   packet:   "<firstName>,<lastName>,<imageSize>"
+                             2nd+ packets:   "<pictureData>"
+                             These picture data packets will continue until the entirety of the picture has been transmitted
+                             The file is complete once the server has recieved a packet ending with an EOF character
+            */
+            //get the name information from the first packet transmitted
+            char *firstName = strtok(client_p.payload, ",");
+            char *lastName = strtok(NULL, ",");
+            char *imageSize = strtok(NULL, "");
+
+            unsigned long size = atol(imageSize);
+
+            //create an array capable of holding the entire image
+            char pictureData[size];
+            int i = 0;
+            //start recieving the picture data, continue until this entire picture has been recieved
+            while(i < size - 1){
+                //read in a new packet of data
+                bytes_read = read(pipe_read(pipes), &client_p, MAX_PACKET);
+                //store the picture data into the array
+                pictureData[i] = client_p.payload[0];
+                //increment i by the length of the payload
+                i += client_p.length;
+            }
+
+            char *response;
+            int resp = addPicture(firstName, lastName, pictureData, response);
+
+            if (resp){
+                //send an error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //send the information back to the client!
+                return_response(pipes, response, &cur_seq_num);
+            }
+        //connect picture
+        } else if (opcode == 6){
+            //payload syntax "<pictureID>,<recordID>"
+            char *pictureID = strtok(client_p.payload, ",");
+            char *recordID = strtok(NULL, "");
+
+            int pID = atoi(pictureID);
+            int rID = atoi(recordID);
+
+            int resp = connectPictureToRecord(pID, rID);
+
+            if (resp){
+                //send and error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //send the success packet back!
+                return_response(pipes, "", &cur_seq_num);
+            }
+        //logout!
+        } else if (opcode == 7){
+            //payload syntax NONE
+            //break out of the while loop containin this and allow the thread processing this client to exit
+            break;
+        //download picture
+        } else if (opcode == 8){
+            //payload syntax "<pictureID>"
+            char *pictureID = strtok(client_p.payload, "");
+            int pID = atoi(pictureID);
+
+            char *pictureData;
+            int resp = queryPicture(pID, pictureData);
+
+            if (resp){
+                //send an error back!
+                return_error(pipes, resp, &cur_seq_num);
+            } else {
+                //break the image into packets and send it back to the client!
+                //write the data into a tempory file handle for simple reading when breaking into packets
+                //base the temporary file off of the pid to ensure uniqueness
+                char *filename;
+                int pid = getpid();
+                char cpid[10];
+                sprintf(cpid, "%d", pid);
+                strcpy(filename, "temp_");
+                strcat(filename, cpid);
+                strcat(filename, ".jpg");
+                //open the temp file for writing
+                FILE *picture = fopen(filename, "w");
+                //write the entire image to the file!
+                fwrite(pictureData, 1, sizeof(pictureData), picture);
+
+                //send a simple packet informing the client of the size of the image that it is going to recieve
+                response_p.opcode = 5;
+                response_p.seq_num = cur_seq_num;
+                cur_seq_num++;
+                sprintf(response_p.payload, "%lu", sizeof(pictureData));
+                response_p.length = strlen(response_p.payload);
+                send_packet(pipes, response_p);
+
+                //read into packets and send them until the end of file is reached
+                //note this uses the same packet pointer the entire time so the opcode does not need to be set again
+                response_p.opcode = 5;
+                while(!feof(picture)){
+                    //read at most 251 bytes of the picture into the packets payload
+                    int readSize = fread(response_p.payload, 1, MAX_PAYLOAD, picture);
+                    //if there was no error then add the sequence number and the length to the packet then send it
+                    //DO NOT SET THE SEND FLAG, this will handle it on its own since there could be multiple sends
+                    if (!ferror(picture)){
+                        response_p.seq_num = cur_seq_num;
+                        cur_seq_num++;
+
+                        response_p.length = (uint8_t)readSize;
+
+                        //send this packet down to the data link layer
+                        send_packet(pipes, response_p);
+                    } else {
+                        //an error occured return an error code so that the client can stop processing the image and drop the corrupt data
+                        return_error(pipes, 1, &cur_seq_num);
+                        break;
+                    }
+                }
+                //close the picture that was being read
+                fclose(picture);
+                //delete the temporary file
+                remove(filename);
+            }
+        }
+    // Send it straight back
+    //printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
+    //write(pipe_write(pipes), read_buffer, to_read);
     }
-  
-  printf("Client successfully terminated!\n");
-  pthread_exit(NULL);
+
+    pthread_exit(NULL);
 }
 
+void send_packet(int pipes[], struct packet p){
+    write(pipe_write(pipes), &p, p.length + PACKET_OVERHEAD);
+}
+
+void return_error(int pipes[], int error_code, uint16_t *cur_seq_num){
+    struct packet p;
+    //send an error back!
+    p.opcode = error_code;
+    p.seq_num = *cur_seq_num;
+    *cur_seq_num++;
+    p.length = 0;
+    send_packet(pipes, p);
+}
+
+void return_response(int pipes[], char *payload, uint16_t *cur_seq_num){
+    struct packet p;
+    //respond to the clients request
+    //set response code for success!
+    p.opcode = 0x05;
+    p.seq_num = *cur_seq_num;
+    *cur_seq_num++;
+    //add the payload into the packet
+    strcpy(p.payload, payload);
+    p.length = strlen(p.payload);
+
+    //send the response
+    send_packet(pipes, p);
+}
