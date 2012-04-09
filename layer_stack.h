@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <pthread.h>
 
 #include <sys/time.h>
@@ -46,31 +47,52 @@
 #define FRAME_KILL_EVERY_N_ACKS 8
 #define FRAME_KILL_MAGIC 0x0800
 
+
+
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
 #define pipe_write(x) (x[1])
 
 enum frame_event { PHYSICAL_FRAME_READY, NETWORK_FRAME_READY, CHECKSUM_ERROR, TIME_OUT, NOP };
 
+// Info we pass to the thread that creates/watches the layer stack
+struct stack_create_info
+{
+  int clnt_sock;
+  int *app_layer_pipes;
+  struct layer_stack *stack;
+};
+
+
 struct layer_info
 {
   // FDs for the thread's input/output pipes
   int in;
   int out;
+  struct layer_stack *stack; // Pointer to the whole stack so each layer can update the statistics
 };
 
 struct bidirectional_layer_info // So the DLL can't run as a send and recv thread
 {
   int top_in, top_out;       // So we need to handle communication in both directions
   int bottom_in, bottom_out; 
+  struct layer_stack *stack;
 };
 
 struct layer_stack
 {
   struct layer_info net_send_info, net_recv_info; // FDs for each end of the pipe for each layer
-  struct layer_info dl_send_info, dl_recv_info;
+  struct bidirectional_layer_info dl_info;
   struct layer_info phys_send_info, phys_recv_info;
-  pthread_mutex_t wire_lock; // Mutex for controlling which piece of the physical layer has the wire
+
+  pthread_mutex_t net_dl_wire_lock, phys_dl_wire_lock; // Mutexes for our "nonblocking" DL pipes
+  uint32_t net_to_dl_frame_size, phys_to_dl_frame_size;
+
+  int total_frames_sent, total_acks_sent;
+  int total_good_frames_sent, total_good_frames_recvd; // Statistics, as specified
+  int total_good_acks_sent, total_good_acks_recvd;
+  int total_bad_acks_recvd, total_dup_frames_recvd, total_bad_frames_recvd;
+  int completed; // Whether or not we're done & can print statistics
 };
 
 struct frame_window {
@@ -104,6 +126,6 @@ struct frame {
 };
 
 // Prototypes
-int init_layer_stack(int clnt_sock, int *app_layer_pipes);
+struct layer_stack *create_layer_stack(int clnt_sock, int *app_layer_pipes);
 void die_with_error(char *msg);
 #endif

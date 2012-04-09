@@ -39,6 +39,7 @@ int main(int argc, char *argv[])
   int pipes[2];
 
   struct packet out, in;
+  struct layer_stack *stack;
   
   if((argc < 3) || (argc > 7))
     {
@@ -73,8 +74,7 @@ int main(int argc, char *argv[])
   echo_str_len = strlen(argv[2]) + 1;
 
   // Make the layer stack
-  if((init_layer_stack(sock, pipes)))
-    die_with_error("Layer stack creation failed!");
+  stack = create_layer_stack(sock, pipes);
 
   sleep(1);  // Wait for the thread creation to settle.  
 
@@ -102,9 +102,10 @@ int main(int argc, char *argv[])
   // Cleanup
   printf("Got all strings, waiting 2 seconds before terminating...\n");
   sleep(2);
-
-  printf("Echo Client:  Done.\n"); 
   close(sock);
+  printf("Successfully terminated!\n");
+  printf("Echo Client:  Done.\n"); 
+
   exit(0);
 }
 

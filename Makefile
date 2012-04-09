@@ -1,6 +1,6 @@
 CC=gcc -Wall -g
 
-all: did_server did_client echo_client_test
+all: did_server did_client picture_client_test echo_client_test
 
 did_server: did_server.o layer_stack.o
 	$(CC) -pthread layer_stack.o did_server.o -o did_server
@@ -10,6 +10,12 @@ did_client: did_client.o layer_stack.o
 
 echo_client_test: echo_client_test.o layer_stack.o
 	$(CC) -pthread layer_stack.o echo_client_test.o -o echo_client_test
+
+picture_client_test: picture_client_test.o layer_stack.o
+	$(CC) -pthread layer_stack.o picture_client_test.o -o picture_client_test
+
+picture_client_test.o: picture_client_test.c layer_stack.h
+	$(CC) -pthread -c picture_client_test.c
 
 echo_client_test.o: echo_client_test.c layer_stack.h
 	$(CC) -pthread -c echo_client_test.c

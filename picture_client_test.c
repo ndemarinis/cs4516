@@ -81,8 +81,7 @@ int main(int argc, char *argv[])
  
 
   // Make the layer stack
-  if((init_layer_stack(sock, pipes)))
-    die_with_error("Layer stack creation failed!");
+  create_layer_stack(sock, pipes);
 
   sleep(1);  // Wait for the thread creation to settle.  
 
@@ -94,6 +93,7 @@ int main(int argc, char *argv[])
     die_with_error("Error reading file!");
 
   bytes_remaining = file_len;
+
   while(bytes_remaining > 0)
     {
       memset(&out, 0, sizeof(struct packet));
@@ -121,41 +121,13 @@ int main(int argc, char *argv[])
   fclose(fp_in);
   fflush(fp_out);
   fclose(fp_out);
-#if 0
-  printf("\n\nSending a new string of length %d bytes...\n", echo_str_len);
-      if(echo_str_len > PACKET_PAYLOAD_SIZE)
-	die_with_error("String too large for one packet!");
-
-      memset(&out, 0, sizeof(struct packet));
-      memcpy(out.payload, echo_str, echo_str_len);
-      out.length = echo_str_len - 1;
-
-      if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
-	die_with_error("send() sent a different number of bytes than expected");
-      
-      memset(&in, 0, sizeof(struct packet)); // Zero our buffer for safety. 
-
-      if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
-	 die_with_error("recv() failed or connection closed unexpectedly!");
-
-      printf("Received string of %d bytes:  %s\n", in.length + 1, in.payload);
-#endif
-
 
   // Cleanup
-  printf("Echo Client:  Done.\n"); 
+  printf("Test Picture Client:  Done.\n"); 
   close(sock);
   exit(0);
 }
 
-#if 0
-void die_with_error(char *msg)
-{
-  printf("%s\n", msg);
-  exit(2);
-}
-
-#endif
 
 unsigned int fsize(char* filename)
 {

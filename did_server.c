@@ -22,7 +22,10 @@
 struct client_handler_data
 {
   int sock; // Just the client's fd, for now
+  pthread_t client_handler;
+  struct layer_stack *stack;
 };
+
 
 // Prototypes
 void *handle_client(void *data);
@@ -69,10 +72,12 @@ int main(int argc, char *argv[])
       client_data[curr_clients].sock = clnt_sock;
 
       if(curr_clients < MAX_CLIENTS)
-	pthread_create(&(threads[curr_clients]), NULL, handle_client, 
+	pthread_create(&(client_data[curr_clients].client_handler), NULL, handle_client, 
 		       (void *)(&(client_data[curr_clients])));
       else
 	die_with_error("Too many clients!");
+
+      curr_clients++;
     }
   
   // We should never reach this.  Yet.
@@ -88,16 +93,17 @@ int main(int argc, char *argv[])
 void *handle_client(void *data)
 {
   struct client_handler_data *clnt = (struct client_handler_data *)data;
+  struct layer_stack *stack; // Pointer to statistics and such from the layer stack
   int pipes[2]; // Make a pipe to connect to the layer stack
 
-  int to_read;
+  int to_read, bytes_written;
   char read_buffer[PIPE_BUFFER_SIZE];
   struct packet* pkt_in;
 
   memset(read_buffer, 0, PIPE_BUFFER_SIZE);
   
-  if((init_layer_stack(clnt->sock, pipes))) // Initialize all of our layer threads
-    die_with_error("Layer stack creation failed!");
+  create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+  sleep(1); // Wait for the layer stack creation to settle
 
   for(;;)
     {
@@ -105,7 +111,11 @@ void *handle_client(void *data)
       printf("APP:  Starting a test read.\n\n");
 
       // Grab a string
-      to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE);
+      if((to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE)) <= 0)
+	{
+	  printf("APP:  Read 0 bytes from socket.  Terminating!\n");
+	  break;
+	}
 
       pkt_in = (struct packet *)read_buffer;
 
@@ -114,9 +124,14 @@ void *handle_client(void *data)
 
       // Send it straight back
       printf("APP:  Sending packet of %d bytes back to client\n", to_read);
-      write(pipe_write(pipes), read_buffer, to_read);
+      if((bytes_written = write(pipe_write(pipes), read_buffer, to_read)) <= 0)
+	{
+	  printf("APP:  Wrote %d bytes, socket must have closed.  Terminating!\n", bytes_written);
+	  break;
+	}
     }
-
+  
+  printf("Client successfully terminated!\n");
   pthread_exit(NULL);
 }
 

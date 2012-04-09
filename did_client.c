@@ -58,7 +58,7 @@ int main(int argc, char *argv[]){
 
     memset(read_buffer, 0, PIPE_BUFFER_SIZE);
   
-    if((init_layer_stack(sock, pipes))) // Initialize all of our layer threads
+    if((create_layer_stack(sock, pipes))) // Initialize all of our layer threads
         die_with_error("Layer stack creation failed!");
 
     sleep(1);
