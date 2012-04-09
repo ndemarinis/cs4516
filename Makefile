@@ -2,6 +2,9 @@ CC=gcc -Wall -g
 
 all: did_server did_client
 
+debug: CC = gcc -Wall -g -DDID_DEBUG_MODE
+debug: all
+
 client: did_client
 
 tests: echo_client_test picture_client_test test_did_server
