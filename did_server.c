@@ -274,7 +274,7 @@ void *handle_client(void *data){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
                 //store the picture data into the array
-                memcpy(pictureData + i, client_p.payload, bytes_read);
+                memcpy(pictureData + i, client_p.payload, client_p.length);
                 //increment i by the length of the payload
                 i += bytes_read;
             }

@@ -198,14 +198,18 @@ void *init_physical_layer_send(void *info)
   int bytes_read, bytes_sent;
   struct layer_info *fds = (struct layer_info *)info;
 
+  char *buffer_to_send;
+  int len_to_send = 0;
+  
   struct frame frame_out;
-
+  struct ack ack_out;
   // Grab something to process
   printf("PHY:  Thread created!\n");
 
   for(;;)
     {
       memset(&frame_out, 0, sizeof(struct frame));
+      memset(&ack_out, 0, sizeof(struct ack));
 
       // Get something to send, block if nothing.  
       if((bytes_read = read(fds->in, &frame_out, sizeof(struct frame))) <= 0)
@@ -213,7 +217,6 @@ void *init_physical_layer_send(void *info)
 	  printf("PHY:  Read %d bytes from APP.  Pipe was probably closed.  Terminating!\n", bytes_read);
 	  break;
 	}
-      dprintf(DID_INFO, "PHY:  Sending %d bytes\n", bytes_read);
 
       if(frame_out.type == FRAME_TYPE_FRAME) 
 	{
@@ -224,6 +227,10 @@ void *init_physical_layer_send(void *info)
 	    }
 	  else
 	    (fds->stack)->total_good_frames_sent++;
+
+	  // We're sending a whole frame, so just set the buffer accordingly
+	  buffer_to_send = (char *)&frame_out;
+	  len_to_send = sizeof(struct frame);
 	}
 
       if(frame_out.type == FRAME_TYPE_ACK)
@@ -235,10 +242,20 @@ void *init_physical_layer_send(void *info)
 	    }
 	  else
 	    (fds->stack)->total_good_acks_sent++;
+	  
+	  // Populate the ACK struct
+	  ack_out.type = frame_out.type;
+	  ack_out.seq = frame_out.seq;
+	  ack_out.checksum = frame_out.checksum;
+
+	  buffer_to_send = (char *)&ack_out;
+	  len_to_send = sizeof(struct ack);
 	}
 
+      dprintf(DID_INFO, "PHY:  Sending %s of %d bytes\n", get_frame_type(frame_out), len_to_send);
+
       // Send it down to the next pipe, don't block
-      if((bytes_sent = send(fds->out, &frame_out, sizeof(struct frame), 0)) <= 0)
+      if((bytes_sent = send(fds->out, buffer_to_send, len_to_send, 0)) <= 0)
 	{
 	  printf("PHY:  Sent %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
 		 bytes_read, strerror(errno));
@@ -524,26 +541,45 @@ void *init_physical_layer_recv(void *info)
   int bytes_read, bytes_written;
   struct layer_info *fds = (struct layer_info *)info;
 
+  char recv_buffer[sizeof(struct frame)];
   struct frame frame_in;
+  struct ack *ack_in;
 
   printf("PHY:  Thread created!\n");
 
   while(1)
     {
       memset(&frame_in, 0, sizeof(struct frame));
+      memset(recv_buffer, 0, sizeof(struct frame));
 
       // Try to receive, block if necessary
       // TODO:  Handle errors/terminating more gracefully.  
-      if((bytes_read = recv(fds->in, &frame_in, sizeof(struct frame), 0)) <= 0) 
+      if((bytes_read = recv(fds->in, recv_buffer, sizeof(struct frame), 0)) <= 0) 
 	{
 	  dprintf(DID_INFO, "PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
 		 bytes_read, strerror(errno));
 	  close(fds->in);
 	  break;
 	}
-      else
-	dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
+     
+      dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
 	       bytes_read, frame_in.length);
+
+      if(((struct frame *)recv_buffer)->type == FRAME_TYPE_FRAME)
+	{
+	  dprintf(DID_INFO, "PHY:  Got FRAME\n");
+	  memcpy(&frame_in, recv_buffer, sizeof(struct frame));
+	}
+      else if(((struct ack *)recv_buffer)->type == FRAME_TYPE_ACK)
+	{
+	  dprintf(DID_INFO, "PHY:  Got ACK\n");
+	  ack_in = (struct ack *)recv_buffer;
+	  frame_in.type = ack_in->type;
+	  frame_in.seq = ack_in->seq;
+	  frame_in.checksum = ack_in->checksum;
+	}
+      else
+	dprintf(DID_INFO, "PHY:  NO IDEA what I just received.\n");
       
       // Send it down to the next pipe
       pthread_mutex_lock(&phys_dl_wire_lock);
@@ -634,7 +670,7 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
   out.type = frame_type;
   out.seq = seq_num;
   out.length = (frame_type == FRAME_TYPE_FRAME) ? pkt_buffer[seq_num].length : 0;
-  out.end_of_pkt = pkt_buffer[seq_num].end_of_pkt;
+  out.end_of_pkt = (frame_type == FRAME_TYPE_FRAME) ? pkt_buffer[seq_num].end_of_pkt : 0;
 
   // Actually load the payload into the frame, if it's a frame
   if(frame_type == FRAME_TYPE_FRAME)

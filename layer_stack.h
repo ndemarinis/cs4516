@@ -145,10 +145,16 @@ struct packet_segment {
 struct frame {
   uint8_t  type;       // Frame type (Data or ACK), one byte
   uint16_t seq;        // Sequence number for this frame
-  uint8_t  end_of_pkt; // Whether or not this is the end of the backet
+  uint8_t  end_of_pkt; // Whether or not this is the end of the packet
   uint8_t length;      // Length of the payload
   uint16_t checksum;   // Checksum, determined with folding XOR
   char payload[FRAME_PAYLOAD_SIZE]; // Payload buffer, max of 150 bytes
+};
+
+struct ack {
+  uint8_t type;
+  uint16_t seq;
+  uint16_t checksum;
 };
 
 // Prototypes
