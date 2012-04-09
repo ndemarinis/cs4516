@@ -12,6 +12,7 @@
 
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 
 #include "layer_stack.h"
@@ -23,32 +24,38 @@
 #define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
 #define TERM_STR_LEN 2
 
+#define FILE_SIZE 100000
+
 // Prototypes
 void die_with_error(char *msg);
+unsigned int fsize(char* filename);
 
 int main(int argc, char *argv[])
 {
-  int n;
-  int sock, bytes_recvd;
-  char *srv_ip, *echo_str;
-  unsigned int echo_str_len;
+  int sock, bytes_recvd, file_len, bytes_remaining, len;
+  char *srv_ip, *file_name, *out_name;
+  FILE *fp_in, *fp_out;
+  
   struct hostent *srv_host;
   struct sockaddr_in srv_addr;
 
   int pipes[2];
 
+  char file_buffer[FILE_SIZE];
+  char *f_ptr = file_buffer;
+  
   struct packet out, in;
-  struct layer_stack *stack;
   
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
-	      "Usage:  %s <Server IP> <Echo word>\n", argv[0]);
+	      "Usage:  %s <Server IP> <picture filename (limit 100kb)> <dest>\n", argv[0]);
       exit(1);
     }
 
   srv_ip = argv[1];
-  echo_str = argv[2];
+  file_name = argv[2];
+  out_name = argv[3];
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -70,49 +77,61 @@ int main(int argc, char *argv[])
   if((connect(sock, (struct sockaddr*)(&srv_addr), sizeof(srv_addr))) < 0)
     die_with_error("connect() failed!");
  
-  echo_str_len = strlen(argv[2]) + 1;
 
   // Make the layer stack
-  stack = create_layer_stack(sock, pipes);
+  create_layer_stack(sock, pipes);
 
   sleep(1);  // Wait for the thread creation to settle.  
 
-  for(n = 0; n < 1; n++)
-    {
-      printf("\n\nSending a new string of length %d bytes...\n", echo_str_len);
-      if(echo_str_len > PACKET_PAYLOAD_SIZE)
-	die_with_error("String too large for one packet!");
+  fp_in = fopen(file_name, "r+");
+  file_len = fsize(file_name);
+  fp_out = fopen(out_name, "w+");
 
+  if(read(fileno(fp_in), file_buffer, file_len) != file_len)
+    die_with_error("Error reading file!");
+
+  bytes_remaining = file_len;
+
+  while(bytes_remaining > 0)
+    {
       memset(&out, 0, sizeof(struct packet));
-      memcpy(out.payload, echo_str, echo_str_len);
-      out.length = echo_str_len - 1;
+      memset(&in, 0, sizeof(struct packet));
+
+      len = (bytes_remaining > PACKET_PAYLOAD_SIZE) ? PACKET_PAYLOAD_SIZE : bytes_remaining;
+      printf("Sending packet with %d bytes of picture...\n", len);
+
+      memcpy(out.payload, f_ptr, len);
+
+      f_ptr += len;
+      bytes_remaining -= len;
+
+      out.length = len - 1;
 
       if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
 	die_with_error("send() sent a different number of bytes than expected");
       
-      memset(&in, 0, sizeof(struct packet)); // Zero our buffer for safety. 
-
       if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
-	 die_with_error("recv() failed or connection closed unexpectedly!");
+	 die_with_error("recv() failed or connection closed unexpectedly!");      
 
-      printf("Received string of %d bytes:  %s\n", in.length + 1, in.payload);
+      write(fileno(fp_out), in.payload, in.length + 1);
     }
 
-  // Cleanup
-  printf("Got all strings, waiting 2 seconds before terminating...\n");
-  sleep(2);
-  close(sock);
-  printf("Successfully terminated!\n");
-  printf("Echo Client:  Done.\n"); 
+  fclose(fp_in);
+  fflush(fp_out);
+  fclose(fp_out);
 
+  // Cleanup
+  printf("Test Picture Client:  Done.\n"); 
+  close(sock);
   exit(0);
 }
 
-#if 0
-void die_with_error(char *msg)
-{
-  printf("%s\n", msg);
-  exit(2);
-}
 
-#endif
+unsigned int fsize(char* filename)
+{
+  struct stat buf;
+  
+  stat(filename, &buf);
+  printf("%i\n", (int)buf.st_size);
+  return buf.st_size;
+}

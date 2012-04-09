@@ -110,8 +110,8 @@ void *handle_client(void *data){
     int pipes[2]; // Make a pipe to connect to the layer stack
     uint16_t cur_seq_num = 0;
 
-    if((init_layer_stack(clnt->sock, pipes))) // Initialize all of our layer threads
-        die_with_error("Layer stack creation failed!");
+    create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+    sleep(1); // Wait a second for the thread creation to settle
 
     int bytes_read;
     struct packet client_p;
@@ -408,3 +408,4 @@ void return_response(int pipes[], char *payload, uint16_t *cur_seq_num){
     //send the response
     send_packet(pipes, p);
 }
+
