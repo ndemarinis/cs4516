@@ -1,4 +1,4 @@
-CC=gcc -Wall -g
+CC=gcc -Wall 
 
 all: did_server did_client
 
