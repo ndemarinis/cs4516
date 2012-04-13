@@ -277,30 +277,35 @@ void *handle_client(void *data){
             while(i < size - 1){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
+		printf("Received packet of %d bytes with payload of %d bytes.\n", 
+		       bytes_read, client_p.length);
+
                 //store the picture data into the array
                 memcpy(pictureData + i, client_p.payload, client_p.length);
-
-		// DEBUG write to the test file
-		write(fileno(out), client_p.payload, client_p.length);
 
                 //increment i by the length of the payload
                 i += client_p.length;
             }
 
+	    // DEBUG:  Write out that whole array to the test file
+	    printf("Received picture of %d total bytes.\n", i);
+	    write(fileno(out), pictureData, i);
+
 	    // DEBUG:  Close that file
 	    fflush(out);
 	    fclose(out);	    
 
-            char *response;
-            int resp = addPicture(firstName, lastName, pictureData, response);
+            char add_response[10];
+            int resp = addPicture(firstName, lastName, pictureData, add_response);
 
             if (resp){
                 //send an error back!
                 return_error(pipes, resp, &cur_seq_num);
             } else {
                 //send the information back to the client!
-                return_response(pipes, response, &cur_seq_num);
+                return_response(pipes, add_response, &cur_seq_num);
             }
+
         //connect picture
         } else if (opcode == __CONNECT_PIC_CODE){
             //payload syntax "<pictureID>,<recordID>"

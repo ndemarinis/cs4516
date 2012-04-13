@@ -303,13 +303,16 @@ int main(int argc, char *argv[]){
 				p.length = (uint8_t)readSize;
 
 				//send this packet down to the data link layer
-				read += MAX_PAYLOAD;
+				read += readSize;
 				write(pipe_write(pipes), &p, sizeof(struct packet));
+				printf("Sent packet with payload of %d bytes to stack.\n", readSize);
 			    } else {
 				printf("\tError sending picture!");
 				break;
 			    }
 			}
+			printf("Successfully sent photo of %d total bytes\n", read);
+			
 			//close the picture that was being read
 			fclose(picture);
 			printf("\tPicture sent!\n");
