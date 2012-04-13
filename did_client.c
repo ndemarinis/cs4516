@@ -11,6 +11,8 @@
 
 #include <netdb.h>
 #include <arpa/inet.h>
+
+#include <sys/time.h>
 #include <sys/socket.h>
 
 #include "layer_stack.h"
@@ -59,6 +61,8 @@ int main(int argc, char *argv[]){
 
     int pipes[2]; // Make a pipe to connect to the layer stack
 
+    struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
+
     char read_buffer[PIPE_BUFFER_SIZE];
 
     memset(read_buffer, 0, PIPE_BUFFER_SIZE);
@@ -72,13 +76,19 @@ int main(int argc, char *argv[]){
     while(1){
         //command line interface for the client
         fputs("DID Client: ", stdout);
+
         fflush(stdout);
         //get user input of command
         fgets(input, sizeof input, stdin);
 
+	if(input[0] == '\n') // Just restart if the user entered nothing (we read a newline)
+	  continue;
+
+	gettimeofday(&cmd_start, NULL); // Record the time we started processing the command
+
         //tokenize string and if it is a proper command execute it
         char *token = strtok(input, " \n");
-        
+		
         //time to handle the command... create a packet that may be used
         struct packet p;
 	memset(&p, 0, sizeof(struct packet));
@@ -305,17 +315,17 @@ int main(int argc, char *argv[]){
 				//send this packet down to the data link layer
 				read += readSize;
 				write(pipe_write(pipes), &p, sizeof(struct packet));
-				printf("Sent packet with payload of %d bytes to stack.\n", readSize);
+				dprintf(DID_APP_INFO, "APP:  Sent packet with payload of %d bytes to layer stack.\n", 
+					readSize);
 			    } else {
 				printf("\tError sending picture!");
 				break;
 			    }
 			}
-			printf("Successfully sent photo of %d total bytes\n", read);
-			
+
 			//close the picture that was being read
 			fclose(picture);
-			printf("\tPicture sent!\n");
+			printf("Successfully sent photo of %d total bytes\n", read);
 
 			//wait for servers response
 			receive_packet(pipes, &p);
@@ -406,6 +416,12 @@ int main(int argc, char *argv[]){
 		  fputs("Invalid Command!\n", stdout);  
 		}
 	}
+	// Print out the total processing time for the command
+	gettimeofday(&cmd_end, NULL);
+	timersub(&cmd_end, &cmd_start, &cmd_diff);
+	printf("Total command processing time:  %ld.%06ld s\n\n", 
+	       cmd_diff.tv_sec, cmd_diff.tv_usec);
+	
     }
 
     // Cleanup

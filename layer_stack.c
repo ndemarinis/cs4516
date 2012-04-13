@@ -26,8 +26,9 @@ void *init_physical_layer_send(void *info);
 void *init_physical_layer_recv(void *info);
 
 void *init_layer_stack(void *info);
-enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *window, 
-				int frames_buffered, int expected, char *buffer, int *bytes_read);
+enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_fd, 
+				struct frame_window *window, int frames_buffered, int expected, 
+				char *buffer, int *bytes_read);
 void send_frame(int fd, struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num);
 uint16_t compute_checksum(struct frame *frame);
 void print_layer_stack_statistics(struct layer_stack *stack);
@@ -38,10 +39,10 @@ struct layer_info net_send_info, net_recv_info; // FDs for each end of the pipe 
 struct layer_info phys_send_info, phys_recv_info;
 struct bidirectional_layer_info dl_info;
 
-pthread_mutex_t net_dl_wire_lock;
-pthread_mutex_t phys_dl_wire_lock;
-uint32_t net_to_dl_frame_size = 0;
-uint32_t phys_to_dl_frame_size = 0;
+//pthread_mutex_t net_dl_wire_lock;
+//pthread_mutex_t phys_dl_wire_lock;
+//uint32_t net_to_dl_frame_size = 0;
+//uint32_t phys_to_dl_frame_size = 0;
 
 int total_frames_sent = 0;
 int total_acks_sent = 0;
@@ -138,6 +139,9 @@ void *init_layer_stack(void *info)
   pthread_mutex_init(&(s_info->net_dl_wire_lock), NULL);
   pthread_mutex_init(&(s_info->phys_dl_wire_lock), NULL);
 
+  s_info->net_to_dl_frame_size = 0;
+  s_info->phys_to_dl_frame_size = 0;
+
   // Give each thread a pointer to the layer stack so it can update the statistice
   // This is possibly the ugliest thing I have ever done.  
   s_info->net_send_info.stack = s_info;
@@ -187,6 +191,20 @@ void *init_layer_stack(void *info)
   close(in->clnt_sock); // Close the socket so the client handler dies
   close(pipe_read(in->app_layer_pipes));
   close(pipe_write(in->app_layer_pipes));
+
+  // Close all of the pipes
+  close((s_info->net_send_info).in);
+  close((s_info->net_send_info).out);
+  close((s_info->net_recv_info).in);
+  close((s_info->net_recv_info).out);
+
+  close((s_info->dl_info).top_in);
+  close((s_info->dl_info).top_out);
+  close((s_info->dl_info).bottom_in);
+  close((s_info->dl_info).bottom_out);
+  
+  close((s_info->phys_send_info).in);
+  close((s_info->phys_recv_info).out);
 
   print_layer_stack_statistics(s_info);
 
@@ -262,13 +280,15 @@ void *init_physical_layer_send(void *info)
 	  break;
 	}
     }
-
+  
+  close(fds->in);
+  close(fds->out);
   pthread_exit(NULL);
 }
 
 void *init_network_layer_send(void *info)
 {
-  int bytes_read, bytes_written, total_pkt_len;
+  int bytes_read, bytes_written, total_pkt_len, term = 0;
   struct layer_info *fds = (struct layer_info *)info;
 
   // Since the payload is at most 256 bytes, it will comprise at most two frames
@@ -322,22 +342,40 @@ void *init_network_layer_send(void *info)
 	}
       
       // Send it down to the next pipe
-      pthread_mutex_lock(&net_dl_wire_lock);
+      pthread_mutex_lock(&((fds->stack)->net_dl_wire_lock));
       
       bytes_written = write(fds->out, &s1, sizeof(struct packet_segment));
-      net_to_dl_frame_size += bytes_written;
+      (fds->stack)->net_to_dl_frame_size += bytes_written;
       dprintf(DID_INFO, "NET:  Sent first segment of %d bytes\n", bytes_written);
 
       if(pkt_in.length > FRAME_PAYLOAD_SIZE) // Send the second frame, if necessary
 	{
-	  bytes_written = write(fds->out, &s2, sizeof(struct packet_segment));
-	  net_to_dl_frame_size += bytes_written;
-	  dprintf(DID_INFO, "NET:  Sent second segment of %d bytes\n", bytes_written);
+	  if((bytes_written = write(fds->out, &s2, sizeof(struct packet_segment))) <= 0)
+	    {
+	      term = 1; // Flag that we need to terminate after we give up the mutex.  
+	      (fds->stack)->net_to_dl_frame_size = -1;
+	    }
+	  else
+	    {
+	      (fds->stack)->net_to_dl_frame_size += bytes_written;
+	      dprintf(DID_INFO, "NET:  Sent second segment of %d bytes\n", bytes_written);
+	    }
 	}
 
-      pthread_mutex_unlock(&net_dl_wire_lock);
+      pthread_mutex_unlock(&((fds->stack)->net_dl_wire_lock));
+      
+      if(term)
+	break;
     }
   
+  dprintf(DID_INFO, "NET:  Send thread entered termination handler!\n");
+
+  pthread_mutex_lock(&((fds->stack)->net_dl_wire_lock));
+  (fds->stack)->net_to_dl_frame_size = -1;
+  pthread_mutex_unlock(&((fds->stack)->net_dl_wire_lock));
+
+  close(fds->in);
+  close(fds->out);
   pthread_exit(NULL);
 }
 
@@ -361,7 +399,8 @@ void *init_network_layer_recv(void *info)
       memset(&f2, 0, sizeof(struct frame));
 
       // Grab a segment to process
-      bytes_read = read(fds->in, &f1, sizeof(struct frame));
+      if((bytes_read = read(fds->in, &f1, sizeof(struct frame))) <= 0)
+	break;
       dprintf(DID_INFO, "NET:  Received frame of %d bytes with payload of %d bytes\n", bytes_read, f1.length);
 
       if(f1.end_of_pkt == FRAME_NOT_EOP)
@@ -382,8 +421,13 @@ void *init_network_layer_recv(void *info)
 	}
 
       // Send it down to the next pipe
-      write(fds->out, &pkt_out, sizeof(struct packet));
+      if(write(fds->out, &pkt_out, sizeof(struct packet)) <= 0)
+	break;
     }
+
+  dprintf(DID_INFO, "NET:  Recv thread entered termination handler!\n");
+  close(fds->in);
+  close(fds->out);
   pthread_exit(NULL);
 }
 
@@ -419,11 +463,19 @@ void *init_data_link_layer(void *info)
       bytes_read = 0;
 
       // Wait for one of our layers to tell us to do something.  
-      while((event = wait_for_event(fds->top_in, fds->bottom_in, packet_buffer, frames_buffered, 
-				    ack_expected, read_buffer, &bytes_read)) != NOP)
+      while((event = wait_for_event(fds->stack, fds->top_in, fds->bottom_in, packet_buffer, 
+				    frames_buffered, ack_expected, read_buffer, &bytes_read)) != NOP)
 
       switch(event)
 	{
+	case PIPE_ERROR:
+	  dprintf(DID_INFO, "DLL:  Entered termination handler!\n");
+	  close(fds->top_in);
+	  close(fds->top_out);
+	  close(fds->bottom_in);
+	  close(fds->bottom_out);
+	  pthread_exit(NULL);
+	  break;
 	case NETWORK_FRAME_READY: // We just received a frame, 
 	  dprintf(DID_DLL_INFO, "DLL:  Got a frame %d from NET of %d bytes with %d currently buffered.\n", 
 		 next_frame_to_send, bytes_read, frames_buffered);
@@ -543,7 +595,7 @@ void *init_physical_layer_recv(void *info)
 
   uint8_t type_recvd;
   char *recv_buffer;
-  int bytes_to_read = 0;
+  int bytes_to_read = 0, term = 0;
  
   struct frame frame_in;
   struct ack ack_in;
@@ -585,7 +637,6 @@ void *init_physical_layer_recv(void *info)
 	{
 	  dprintf(DID_INFO, "PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
 		  bytes_read, strerror(errno));
-	  close(fds->in);
 	  break;
 	}
      
@@ -610,17 +661,35 @@ void *init_physical_layer_recv(void *info)
 	dprintf(DID_INFO, "PHY:  NO IDEA what I just received.\n");
       
       // Send it down to the next pipe
-      pthread_mutex_lock(&phys_dl_wire_lock);
-      bytes_written = write(fds->out, &frame_in, sizeof(struct frame));
-      phys_to_dl_frame_size += bytes_written;
-      pthread_mutex_unlock(&phys_dl_wire_lock);
+      pthread_mutex_lock(&((fds->stack)->phys_dl_wire_lock));
+      if((bytes_written = write(fds->out, &frame_in, sizeof(struct frame))) <= 0)
+	{
+	  (fds->stack)->phys_to_dl_frame_size = -1;
+	  term = 1; // Flag that we need to terminate after we give up the mutex
+	}
+      else
+	(fds->stack)->phys_to_dl_frame_size += bytes_written;
+      
+      pthread_mutex_unlock(&((fds->stack)->phys_dl_wire_lock));
+
+      if(term)
+	break;
     }
 
+  dprintf(DID_INFO, "PHY:  Entered termination handler!\n");
+
+  pthread_mutex_lock(&((fds->stack)->phys_dl_wire_lock));
+  (fds->stack)->phys_to_dl_frame_size = -1;
+  pthread_mutex_unlock(&((fds->stack)->phys_dl_wire_lock));
+
+  close(fds->in);
+  close(fds->out);
   pthread_exit(NULL);
 }
 
-enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *window, 
-				int frames_buffered, int expected, char *buffer, int *b_read)
+enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_fd, 
+				struct frame_window *window, int frames_buffered, 
+				int expected, char *buffer, int *b_read)
 {
   int bytes_read;
   uint16_t checksum;
@@ -630,29 +699,41 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
   struct timeval curr_time, diff_time;
 
   // Try to read from our input pipe, but don't block if nothing's there
-  pthread_mutex_lock(&net_dl_wire_lock);
-  if(net_to_dl_frame_size && frames_buffered < (SLIDING_WINDOW_SIZE + 1))
+  pthread_mutex_lock(&(stack->net_dl_wire_lock));
+  if(stack->net_to_dl_frame_size == -1)
+    rv = PIPE_ERROR;
+  else if(stack->net_to_dl_frame_size && frames_buffered < (SLIDING_WINDOW_SIZE + 1))
     {
-      bytes_read = read(net_fd, buffer, sizeof(struct packet_segment));
-      dprintf(DID_DLL_INFO, "EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
-	     bytes_read, frames_buffered);
-      net_to_dl_frame_size -= bytes_read;
-      rv = NETWORK_FRAME_READY;
+      if((bytes_read = read(net_fd, buffer, sizeof(struct packet_segment))) <= 0)
+	rv = PIPE_ERROR;
+      else
+	{
+	  dprintf(DID_DLL_INFO, "EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
+		  bytes_read, frames_buffered);
+	  stack->net_to_dl_frame_size -= bytes_read;
+	  rv = NETWORK_FRAME_READY;
+	}
     }
-  pthread_mutex_unlock(&net_dl_wire_lock);
+  pthread_mutex_unlock(&(stack->net_dl_wire_lock));
  
   // Try to read from the physical layer pipe, without blocking, if that fails
   if(rv == NOP)
     {
-      pthread_mutex_lock(&phys_dl_wire_lock);
-      if(phys_to_dl_frame_size)
+      pthread_mutex_lock(&(stack->phys_dl_wire_lock));
+      if(stack->phys_to_dl_frame_size == -1)
+	rv = PIPE_ERROR;
+      else if(stack->phys_to_dl_frame_size)
 	{
-	  bytes_read = read(phys_fd, buffer, sizeof(struct frame));
-	  dprintf(DID_DLL_INFO, "EVENT:  Got into PHYS, read %d bytes.\n", bytes_read);
-	  phys_to_dl_frame_size -= bytes_read;
-	  rv = PHYSICAL_FRAME_READY;
+	  if((bytes_read = read(phys_fd, buffer, sizeof(struct frame))) <= 0)
+	    rv = PIPE_ERROR;
+	    else
+	      {
+		dprintf(DID_DLL_INFO, "EVENT:  Got into PHYS, read %d bytes.\n", bytes_read);
+		stack->phys_to_dl_frame_size -= bytes_read;
+		rv = PHYSICAL_FRAME_READY;
+	      }
 	}
-      pthread_mutex_unlock(&phys_dl_wire_lock);
+      pthread_mutex_unlock(&(stack->phys_dl_wire_lock));
       
       if(rv == PHYSICAL_FRAME_READY) // If our call just found a frame
 	{
@@ -721,7 +802,11 @@ enum frame_event wait_for_event(int net_fd, int phys_fd, struct frame_window *wi
   gettimeofday(&(pkt_buffer[seq_num].time_sent), NULL);
 
   // Send it to the physical layer
-  write(fd, &out, sizeof(struct frame));
+  if(write(fd, &out, sizeof(struct frame)) <= 0)
+    {
+      dprintf(DID_DLL_INFO, "DLL:  send_frame terminating!\n");
+      pthread_exit(NULL);
+    }
 }
 
 uint16_t compute_checksum(struct frame *frame)

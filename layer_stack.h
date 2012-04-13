@@ -23,7 +23,6 @@
 #define PIPE_BUFFER_SIZE 2048
 #define MAX_CLIENTS 5
 
-
 #define PACKET_PAYLOAD_SIZE 256
 #define FRAME_PAYLOAD_SIZE  150
 
@@ -61,8 +60,9 @@
 // Various debugging levels
 #define DID_CRIT 0
 #define DID_INFO 4
-#define DID_WARN 2
+#define DID_WARN 1
 #define DID_DLL_INFO 3
+#define DID_APP_INFO 2
 
 // Happy macros for getting the read and write components of a pipe's fd array
 #define pipe_read(x) (x[0])
@@ -70,8 +70,8 @@
 
 #define dprintf(level, format, ...) if(level <= DID_DEBUG_LEVEL) printf(format, ##__VA_ARGS__)
 
-enum frame_event { PHYSICAL_FRAME_READY, NETWORK_FRAME_READY, CHECKSUM_ERROR, TIME_OUT, NOP };
-
+enum frame_event { PHYSICAL_FRAME_READY, NETWORK_FRAME_READY, CHECKSUM_ERROR, TIME_OUT, 
+		   PIPE_ERROR, NOP };
 
 struct response {
     int recordID;
@@ -112,7 +112,7 @@ struct layer_stack
   struct layer_info phys_send_info, phys_recv_info;
 
   pthread_mutex_t net_dl_wire_lock, phys_dl_wire_lock; // Mutexes for our "nonblocking" DL pipes
-  uint32_t net_to_dl_frame_size, phys_to_dl_frame_size;
+  int net_to_dl_frame_size, phys_to_dl_frame_size;
 
   int total_frames_sent, total_acks_sent;
   int total_good_frames_sent, total_good_frames_recvd; // Statistics, as specified

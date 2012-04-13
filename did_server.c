@@ -40,7 +40,8 @@
 // Struct for data we send to the client handler
 struct client_handler_data
 {
-    int sock; // Just the client's fd, for now
+  pthread_t thread; // Thread handler for the client
+  int sock;         // The client's FD
 };
 
 // Prototypes
@@ -59,7 +60,7 @@ int main(int argc, char *argv[])
     unsigned int clnt_len;
     struct sockaddr_in srv_addr, clnt_addr;
 
-    pthread_t threads[MAX_CLIENTS];
+    struct client_handler_data *next_clnt;
 
     // Create our listen socket
     if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
@@ -87,12 +88,13 @@ int main(int argc, char *argv[])
         if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
         die_with_error("accept() failed!");
 
-        client_data[curr_clients].sock = clnt_sock;
+	next_clnt = (struct client_handler_data *)malloc(sizeof(struct client_handler_data));
+	next_clnt->sock = clnt_sock;
 
-        if(curr_clients < MAX_CLIENTS)
+        if(curr_clients++ < MAX_CLIENTS)
 	  {
-            pthread_create(&(threads[curr_clients]), NULL, handle_client, 
-                            (void *)(&(client_data[curr_clients])));
+            pthread_create(&(next_clnt->thread), NULL, handle_client, 
+                            (void *)next_clnt);
 	  }
         else
             die_with_error("Too many clients!");
@@ -277,7 +279,7 @@ void *handle_client(void *data){
             while(i < size - 1){
                 //read in a new packet of data
                 bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
-		printf("Received packet of %d bytes with payload of %d bytes.\n", 
+		dprintf(DID_APP_INFO, "APP:  Received packet of %d bytes with payload of %d bytes.\n", 
 		       bytes_read, client_p.length);
 
                 //store the picture data into the array
@@ -398,7 +400,8 @@ void *handle_client(void *data){
     //printf("APP:  Sending string of %d bytes:  %s\n", to_read, read_buffer);
     //write(pipe_write(pipes), read_buffer, to_read);
     }
-
+    
+    curr_clients--;
     pthread_exit(NULL);
 }
 
