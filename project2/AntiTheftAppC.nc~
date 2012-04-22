@@ -1,0 +1,23 @@
+/*
+ * AntiTheftAppC.nc
+ * Nicholas DeMarinis
+ * 21 April 2012
+ */ 
+
+configuration AntiTheftAppC 
+{
+}
+
+implementation
+{
+  components AntiTheftC, MainC, LedsC;
+  component HamamatsuS1087ParC;
+  components new TimerMilliC() as TTimer;
+
+  DarkC.Boot -> MainC;
+  DarkC.Leds -> LedsC;
+  DarkC.TheftTimer -> TTimer;
+  DarkC.Light -> HamamatsuS1087ParC;
+}
+
+

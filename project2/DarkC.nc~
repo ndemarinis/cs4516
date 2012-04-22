@@ -1,0 +1,42 @@
+/*
+ * DarkC.nc
+ * Nicholas DeMarinis
+ * 21 April 2012
+ */
+
+module DarkC
+{
+  uses interface Boot;
+  uses interface Leds;
+  uses interface Timer<TMilli> as TheftTimer;
+  interface Read<uint16_t> as Light;
+}
+
+implementation
+{
+  enum 
+    {
+      DARK_INTERVAL = 256,
+      DARK_THRESHOLD = 150
+    };
+
+  event void Boot.booted()
+  {
+    call TheftTimer.startPeriodic(DARK_INTERVAL);
+  }
+
+  event void TheftTimer.fired()
+  {
+    call Light.read();
+  }
+
+  event void Light.readDone(error_t ok, uint16_t val)
+  {
+    if(ok == SUCCESS && val < DARK_THRESHOLD)
+      call Leds.led2On();
+    else
+      call LEds.led2Off();
+  }
+
+
+}
