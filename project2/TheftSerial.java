@@ -64,7 +64,8 @@ public class TheftSerial implements MessageListener {
 	green_changes++;
     
     // Print out a nice happy message notifying us of the state change
-    System.out.println("Received packet from " + msg.get_who() + ":  " + 
+    System.out.println("Received packet from " + 
+		       ((msg.get_who() == MOTE_RED) ? "RED" : "GREEN") + ":  " + 
 		       ((msg.get_color() == MOTE_RED) ? "RED" : "GREEN") +
 		       " changed state to " + 
 		       ((msg.get_state() == STATE_DARK) ? "DARK" : "LIGHT"));

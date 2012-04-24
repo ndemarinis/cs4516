@@ -7,7 +7,7 @@
 #ifndef ANTITHEFT_H
 #define ANTITHEFT_H
 
-#define IS_RED (ANTITHEFT_MOTE_TYPE == MOTE_RED)
+#define IS_RED (TOS_NODE_ID == MOTE_RED)
 
 
 typedef nx_struct theft
