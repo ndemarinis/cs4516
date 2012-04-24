@@ -29,3 +29,14 @@ Implementation Details
 
 At present, all components of this design function as specified to the
 best of our understanding.  
+	- Both motes sample the PSR sensors at their specified
+intervals and broadcast a message indicating that their light sensors
+have changed state.
+	- The red mote communicates with a connected terminal via the
+serial over USB interface.  This provides information about the state
+changes of both motes and stores a queue of this information for one
+minute.  On each interval, the data is cleared and a summary of the
+state changes is printed to the console.  Note that due to limited
+mote availability, the serial interface was only tested with a single
+sensor.  Given the differences between the two sensor implementations,
+this should not pose a problem.
