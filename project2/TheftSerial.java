@@ -28,6 +28,8 @@
  *
  * @author Phil Levis <pal@cs.berkeley.edu>
  * @date August 12 2005
+ *
+ * Modified by Ian Lonergan to including queueing of messages
  */
 
 import java.io.IOException;
@@ -36,13 +38,20 @@ import net.tinyos.message.*;
 import net.tinyos.packet.*;
 import net.tinyos.util.*;
 
+import java.util.Queue;
+import java.util.LinkedList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledExecutorService;
+
 public class TheftSerial implements MessageListener {
 
     private MoteIF moteIF;
-    private int red_changes = 0, green_changes = 0;
   
-    private final int STATE_DARK = 0, STATE_LIGHT = 1;
-    private final int MOTE_RED = 0, MOTE_GREEN = 1;
+    private static final int STATE_DARK = 0, STATE_LIGHT = 1;
+    private static final int MOTE_RED = 0, MOTE_GREEN = 1;
+	
+    private static Queue<TheftSerialMsg> messageQ;
 
     public TheftSerial(MoteIF moteIF) {
 	this.moteIF = moteIF;
@@ -53,22 +62,64 @@ public class TheftSerial implements MessageListener {
       // We aren't sending anything, so just implement the interface.  
   }
 
+  public static void handleQueue(Queue<TheftSerialMsg> messages)
+  {
+	int red_to_dark = 0, red_to_light = 0, green_to_dark = 0, green_to_light = 0;
+  
+	while (!messages.isEmpty())
+	{
+		TheftSerialMsg msg = messages.remove();
+
+		// Update our counters depending on who signalled
+		if(msg.get_color() == MOTE_RED)
+		{
+		 if (msg.get_state() == STATE_DARK)
+		 {
+			red_to_dark++;
+		 }
+		 else
+		 {
+			red_to_light++;
+		 }
+		}
+		else
+		{
+		if (msg.get_state() == STATE_DARK)
+		 {
+			green_to_dark++;
+		 }
+		 else
+		 {
+			green_to_light++;
+		 }
+		}
+	}
+	
+	// Print out a nice happy message notifying us of the state change
+		System.out.println("Total Red to Dark changes: " + red_to_dark);
+		System.out.println("Total Red to Light changes: " + red_to_light);
+		System.out.println("Total Green to Dark changes: " + green_to_dark);
+		System.out.println("Total Green to Light changes: " + green_to_light);
+  }
 
   public void messageReceived(int to, Message message) {
     TheftSerialMsg msg = (TheftSerialMsg)message;
-
+    /*
     // Update our counters depending on who signalled
     if(msg.get_color() == MOTE_RED)
 	red_changes++;
     else
 	green_changes++;
-    
+    */
     // Print out a nice happy message notifying us of the state change
     System.out.println("Received packet from " + 
 		       ((msg.get_who() == MOTE_RED) ? "RED" : "GREEN") + ":  " + 
 		       ((msg.get_color() == MOTE_RED) ? "RED" : "GREEN") +
 		       " changed state to " + 
 		       ((msg.get_state() == STATE_DARK) ? "DARK" : "LIGHT"));
+
+	messageQ.add((TheftSerialMsg)message);
+
   }
   
   private static void usage() {
@@ -77,6 +128,16 @@ public class TheftSerial implements MessageListener {
   
   public static void main(String[] args) throws Exception {
     String source = null;
+	
+	final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
+	messageQ = new LinkedList<TheftSerialMsg>();
+	Runnable task = new Runnable() {
+		public void run() {
+			handleQueue(messageQ);
+		}
+	};
+	worker.schedule(task, 60, TimeUnit.SECONDS);
+	
     if (args.length == 2) {
       if (!args[0].equals("-comm")) {
 	usage();
