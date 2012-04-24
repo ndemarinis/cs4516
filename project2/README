@@ -1,17 +1,31 @@
 README
-
-(This is a WIP.)
+Nicholas DeMarinis
+Ian Lonergan
+Eric Prouty
+23 April 2012
 
 Compilation Instructions
 
-	To build for the RED mote, invoke:  
-		MOTE_TYPE=MOTE_RED make telosb
+This archive contains source files for the TinyOS demonstration,
+AntiTheft.  This application demonstrates TinyOS programming
+techniques by signalling light sensor state changes between two motes,
+displaying debugging information on an attached computer via the
+builtin serial interface.  For convenience, a Makefile has been
+provided that integrates with the existing TinyOS toolchain to compile
+and load this application.
 
-	Similarly, to build for the GREEN mote, invoke:  
-		MOTE_TYPE=MOTE_GREEN make telosb
+	To compile the given source, simply run:  
+		make telosb
 
-	To program the compiled binary on either mote, run:  
-		make telosb reinstall
-
-	Finally, to watch the serial output (on the dev VM), run:  
+	To load the compiled binaries to the RED mote, install the source with:  
+		make telosb reinstall,0
+	Similarly, to load the source for the GREEN mote, run
+		make telosb reinstall,1
+	
+	Finally, to watch the serial output from the RED mote (on the dev VM), run:  
 		java TheftSerial -comm serial@/dev/ttyUSB0:telos
+
+Implementation Details
+
+At present, all components of this design function as specified to the
+best of our understanding.  

@@ -12,7 +12,7 @@ configuration AntiTheftAppC
 
 implementation
 {
-  components DarkC, MainC, LedsC; 
+  components AntiTheftC, MainC, LedsC; 
   components new HamamatsuS10871TsrC() as TsrLight;
 
   components new TimerMilliC() as RTimer;
@@ -25,25 +25,25 @@ implementation
 
   components SerialActiveMessageC as SerialAM;
 
-  DarkC.Boot -> MainC;
-  DarkC.Leds -> LedsC;
+  AntiTheftC.Boot -> MainC;
+  AntiTheftC.Leds -> LedsC;
 
-  DarkC.RedTimer -> RTimer;
-  DarkC.GreenTimer -> GTimer;
-  DarkC.BlueTimer -> BTimer;
+  AntiTheftC.RedTimer -> RTimer;
+  AntiTheftC.GreenTimer -> GTimer;
+  AntiTheftC.BlueTimer -> BTimer;
 
-  DarkC.Light -> TsrLight;
+  AntiTheftC.Light -> TsrLight;
 
-  DarkC.Packet    -> AMSenderC;
-  DarkC.AMPacket  -> AMSenderC;
-  DarkC.AMSend    -> AMSenderC;
-  DarkC.AMControl -> ActiveMessageC;
-  DarkC.Receive   -> AMReceiverC;
+  AntiTheftC.Packet    -> AMSenderC;
+  AntiTheftC.AMPacket  -> AMSenderC;
+  AntiTheftC.AMSend    -> AMSenderC;
+  AntiTheftC.AMControl -> ActiveMessageC;
+  AntiTheftC.Receive   -> AMReceiverC;
 
-  DarkC.SerialControl -> SerialAM;
-  DarkC.SerialReceive -> SerialAM.Receive[AM_THEFT_SERIAL];
-  DarkC.SerialSend    -> SerialAM.AMSend[AM_THEFT_SERIAL];
-  DarkC.SerialPacket    -> SerialAM;
+  AntiTheftC.SerialControl -> SerialAM;
+  AntiTheftC.SerialReceive -> SerialAM.Receive[AM_THEFT_SERIAL];
+  AntiTheftC.SerialSend    -> SerialAM.AMSend[AM_THEFT_SERIAL];
+  AntiTheftC.SerialPacket    -> SerialAM;
 }
 
 
