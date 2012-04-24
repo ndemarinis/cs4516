@@ -1,3 +1,11 @@
+/*
+ * TheftSerial.java
+ * Ian Lonergan (Queue-based implementation)
+ * Nick DeMarinis (Basic Framework)
+ * Adapted from TestSerial example code (as cited below)
+ * 23 April 2012
+ */
+
 /*									tab:4
  * "Copyright (c) 2005 The Regents of the University  of California.  
  * All rights reserved.
@@ -104,13 +112,7 @@ public class TheftSerial implements MessageListener {
 
   public void messageReceived(int to, Message message) {
     TheftSerialMsg msg = (TheftSerialMsg)message;
-    /*
-    // Update our counters depending on who signalled
-    if(msg.get_color() == MOTE_RED)
-	red_changes++;
-    else
-	green_changes++;
-    */
+
     // Print out a nice happy message notifying us of the state change
     System.out.println("Received packet from " + 
 		       ((msg.get_who() == MOTE_RED) ? "RED" : "GREEN") + ":  " + 
