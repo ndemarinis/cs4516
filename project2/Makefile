@@ -10,7 +10,7 @@ CFLAGS += -I$(TOSDIR)/lib/T2Hack
 
 
 TheftSerial.class: $(wildcard *.java) TheftSerialMsg.java
-	javac -target 1.4 -source 1.4 *.java
+	javac -target 1.5 -source 1.5 *.java
 
 TheftSerialMsg.java:
 	mig java -target=null $(CFLAGS) -java-classname=TheftSerialMsg AntiTheft.h theft_serial -o $@
