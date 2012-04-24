@@ -40,7 +40,7 @@ implementation
   bool serial_sending;
   
   // Control flags for each LED the handlers modify
-  bool red_on = FALSE, green_on = FALSE;
+  //bool red_on = FALSE, green_on = FALSE;
   
   // Last state of each sensor, so we can detect a change
   // Initialize them to something neither 1 nor 0 we always see a change at startup
@@ -63,11 +63,12 @@ implementation
     // If we're the red sensor, sample our light sensor 
     if(IS_RED)
       call Light.read();
-
+#if 0
     if(red_on) // If some handler told us we should turn on the LED for this period, do so
 	call Leds.led0On();
     else
       call Leds.led0Off();
+#endif
   }
 
   event void GreenTimer.fired()
@@ -75,11 +76,12 @@ implementation
     // If we're the red sensor, sample our light sensor 
     if(!IS_RED)
       call Light.read();
-
+#if 0
     if(green_on) // Turn on the LED if a handler signalled for it
 	call Leds.led1On();
     else
       call Leds.led1Off();
+#endif
   }
 
   event void BlueTimer.fired()
@@ -102,9 +104,19 @@ implementation
 
     // Update our LED states based on the color
     if(IS_RED)
-      red_on = (curr_state == STATE_DARK) ? TRUE : FALSE;
+      {
+      if(curr_state == STATE_DARK)
+	call Leds.led0On();
+      else
+	call Leds.led0Off();
+      //      red_on = (curr_state == STATE_DARK) ? TRUE : FALSE;
+      }
     else
-      green_on = (curr_state == STATE_DARK) ? TRUE : FALSE;
+      if(curr_state == STATE_DARK)
+	call Leds.led1On();
+      else
+	call Leds.led1Off();
+	//green_on = (curr_state == STATE_DARK) ? TRUE : FALSE;
     
     if(my_last_state != curr_state) // If our state changed
       {
@@ -155,9 +167,21 @@ implementation
 
 	// If we get a message, it belongs to the other sensor
 	if(IS_RED)
-	  green_on = (pkt->state == STATE_DARK) ? TRUE : FALSE;
+	  {
+	  if(pkt->state == STATE_DARK)
+	    call Leds.led1On();
+	  else
+	    call Leds.led1Off();
+	//	green_on = (pkt->state == STATE_DARK) ? TRUE : FALSE;
+	  }
 	else
-	  red_on = (pkt->state == STATE_DARK) ? TRUE : FALSE;
+	  {
+	  if(pkt->state == STATE_DARK)
+	    call Leds.led0On();
+	  else
+	    call Leds.led0Off();
+	  }
+	//	  red_on = (pkt->state == STATE_DARK) ? TRUE : FALSE;
 
 	// If we're red, notify the serial port we got a message from green
 	if(IS_RED)
