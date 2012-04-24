@@ -1,0 +1,17 @@
+README
+
+(This is a WIP.)
+
+Compilation Instructions
+
+	To build for the RED mote, invoke:  
+		MOTE_TYPE=MOTE_RED make telosb
+
+	Similarly, to build for the GREEN mote, invoke:  
+		MOTE_TYPE=MOTE_GREEN make telosb
+
+	To program the compiled binary on either mote, run:  
+		make telosb reinstall
+
+	Finally, to watch the serial output (on the dev VM), run:  
+		java TheftSerial -comm serial@/dev/ttyUSB0:telos

@@ -38,36 +38,36 @@ import net.tinyos.util.*;
 
 public class TheftSerial implements MessageListener {
 
-  private MoteIF moteIF;
+    private MoteIF moteIF;
+    private int red_changes = 0, green_changes = 0;
   
-  public TheftSerial(MoteIF moteIF) {
-    this.moteIF = moteIF;
-    this.moteIF.registerListener(new TheftSerialMsg(), this);
-  }
+    private final int STATE_DARK = 0, STATE_LIGHT = 1;
+    private final int MOTE_RED = 0, MOTE_GREEN = 1;
+
+    public TheftSerial(MoteIF moteIF) {
+	this.moteIF = moteIF;
+	this.moteIF.registerListener(new TheftSerialMsg(), this);
+    }
 
   public void sendPackets() {
-    TheftSerialMsg payload = new TheftSerialMsg();
-    
-    try {
-      while (true) {
-	System.out.println("Sending packet " + counter);
-	payload.set_color(1);
-	moteIF.send(0, payload);
-
-	try {Thread.sleep(1000);}
-	catch (InterruptedException exception) {}
-      }
-    }
-    catch (IOException exception) {
-      System.err.println("Exception thrown when sending packets. Exiting.");
-      System.err.println(exception);
-    }
+      // We aren't sending anything, so just implement the interface.  
   }
 
 
   public void messageReceived(int to, Message message) {
     TheftSerialMsg msg = (TheftSerialMsg)message;
-    System.out.println("Received packet, state change was  " + msg.get_color());
+
+    // Update our counters depending on who signalled
+    if(msg.get_color() == MOTE_RED)
+	red_changes++;
+    else
+	green_changes++;
+
+    // Print out a nice happy message notifying us of the state change
+    System.out.println("Received packet from " + msg.get_who() + ":  " + 
+		       ((msg.get_color() == 0) ? "RED" : "GREEN") + 
+		       " changed state to " + 
+		       ((msg.get_state() == 0) ? "DARK" : "LIGHT"));
   }
   
   private static void usage() {

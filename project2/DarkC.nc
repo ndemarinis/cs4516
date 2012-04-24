@@ -39,12 +39,16 @@ implementation
   bool sending;
   bool serial_sending;
   
+  // Control flags for each LED the handlers modify
   bool red_on = FALSE, green_on = FALSE;
+  
+  // Last state of each sensor, so we can detect a change
+  // Initialize them to something neither 1 nor 0 we always see a change at startup
+  uint8_t my_last_state = 2;
 
   // Prototypes
-  void reportTheft();
-  void notifyChange(uint16_t who, uint8_t color);
-
+  void reportTheft(uint8_t state);
+  void notifyChange(uint16_t who, uint8_t color, uint8_t state);
 
   event void Boot.booted()
   {
@@ -86,7 +90,7 @@ implementation
 
   event void BlueTimer.fired()
   {
-  // Turn on the blue LED if we see both the red and green LEDs on
+    // Turn on the blue LED if we see both the red and green LEDs on
     if((((call Leds.get()) & (LEDS_LED0|LEDS_LED1)) == (LEDS_LED0|LEDS_LED1)))
       call Leds.led2On();
     else
@@ -97,21 +101,34 @@ implementation
   {
     if(ok == SUCCESS && val < DARK_THRESHOLD) // If we detected darkness
       {
-
 	// If we're red, send a packet to the serial port if our state changed, too.  
-	if(IS_RED)
-	  notifyChange(TOS_NODE_ID, IS_RED ? MOTE_RED : MOTE_GREEN);
+	if(IS_RED && (my_last_state == STATE_LIGHT))
+	  notifyChange(TOS_NODE_ID, IS_RED ? MOTE_RED : MOTE_GREEN, STATE_DARK);
 
 	if(IS_RED) // Turn on our respective LED
 	  red_on = TRUE;
 	else
 	  green_on = TRUE;
 	
-	// Then signal the others
-	reportTheft();
+	// Then signal the others, if we weren't just dark
+	if(my_last_state == STATE_LIGHT)
+	  reportTheft(STATE_DARK);
+
+	my_last_state = STATE_DARK; // Update our state for the next sample
       }
-    else // Otherwise, turn off the LED belonging to us
+    else // Otherwise, we saw light, so turn off the LED belonging to us
       {
+
+	// Signal the others if we just changed state
+	if(my_last_state == STATE_DARK)
+	  reportTheft(STATE_LIGHT);
+
+	// If we're red, notify the serial port we just changed state
+	if(IS_RED && (my_last_state == STATE_DARK))
+	  notifyChange(TOS_NODE_ID, IS_RED ? MOTE_RED : MOTE_GREEN, STATE_LIGHT);
+
+	my_last_state = STATE_LIGHT; // Update our state for the next sample
+
 	if(IS_RED)
 	  red_on = FALSE;
 	else
@@ -160,9 +177,9 @@ implementation
 	else
 	  red_on = TRUE;
 
-	// If we're red, notify the serial port we got a message
+	// If we're red, notify the serial port we got a message from green
 	if(IS_RED)
-	  notifyChange(pkt->who, IS_RED ? MOTE_RED : MOTE_GREEN);
+	  notifyChange(pkt->who, IS_RED ? MOTE_RED : MOTE_GREEN, pkt->state);
       }
 
     return msg;
@@ -192,20 +209,24 @@ implementation
 
 
   // Send a broadcast message saying we're in darkness
-  void reportTheft()
+  void reportTheft(uint8_t state)
   {
     theft_t *payload = (theft_t *)(call Packet.getPayload(&reportMsg, sizeof(theft_t)));
 
     if(payload && !sending)
       {
+	// Populate the packet by sending our ID and our current state
 	payload->who = TOS_NODE_ID;
+	payload->state = state;
+
+	// When send it.  
 	if(call AMSend.send(AM_BROADCAST_ADDR, &reportMsg, sizeof(theft_t)) == SUCCESS)
 	  sending = TRUE;
       }
   }
 
 
-  void notifyChange(uint16_t who, uint8_t color)
+  void notifyChange(uint16_t who, uint8_t color, uint8_t state)
   {
     theft_serial_t *payload = (theft_serial_t *)(call SerialPacket.getPayload(&serialMsg, sizeof(theft_serial_t)));
 
@@ -213,8 +234,10 @@ implementation
 
     if(payload && !serial_sending)
       {
+	// Send who changed, what color they were, and their new state
 	payload->who = who;
 	payload->color = color;
+	payload->state = state;
 	
 	if((call SerialSend.send(AM_BROADCAST_ADDR, &serialMsg, sizeof(theft_serial_t)) == SUCCESS))
 	  serial_sending = TRUE;

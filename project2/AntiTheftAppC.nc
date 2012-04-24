@@ -13,7 +13,7 @@ configuration AntiTheftAppC
 implementation
 {
   components DarkC, MainC, LedsC; 
-  components new HamamatsuS1087ParC() as ParLight;
+  components new HamamatsuS10871TsrC() as TsrLight;
 
   components new TimerMilliC() as RTimer;
   components new TimerMilliC() as GTimer;
@@ -32,7 +32,7 @@ implementation
   DarkC.GreenTimer -> GTimer;
   DarkC.BlueTimer -> BTimer;
 
-  DarkC.Light -> ParLight;
+  DarkC.Light -> TsrLight;
 
   DarkC.Packet    -> AMSenderC;
   DarkC.AMPacket  -> AMSenderC;
@@ -41,8 +41,8 @@ implementation
   DarkC.Receive   -> AMReceiverC;
 
   DarkC.SerialControl -> SerialAM;
-  DarkC.SerialReceive -> SerialAM.Receive[AM_TEST_SERIAL_MSG];
-  DarkC.SerialSend    -> SerialAM.AMSend[AM_TEST_SERIAL_MSG];
+  DarkC.SerialReceive -> SerialAM.Receive[AM_THEFT_SERIAL];
+  DarkC.SerialSend    -> SerialAM.AMSend[AM_THEFT_SERIAL];
   DarkC.SerialPacket    -> SerialAM;
 }
 
