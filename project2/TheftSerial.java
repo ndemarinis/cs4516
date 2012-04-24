@@ -62,12 +62,12 @@ public class TheftSerial implements MessageListener {
 	red_changes++;
     else
 	green_changes++;
-
+    
     // Print out a nice happy message notifying us of the state change
     System.out.println("Received packet from " + msg.get_who() + ":  " + 
-		       ((msg.get_color() == 0) ? "RED" : "GREEN") + 
+		       ((msg.get_color() == MOTE_RED) ? "RED" : "GREEN") +
 		       " changed state to " + 
-		       ((msg.get_state() == 0) ? "DARK" : "LIGHT"));
+		       ((msg.get_state() == STATE_DARK) ? "DARK" : "LIGHT"));
   }
   
   private static void usage() {

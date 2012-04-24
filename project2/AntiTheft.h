@@ -40,7 +40,7 @@ enum
     AM_THEFT_SERIAL = 0x89,
 
     DARK_INTERVAL = 256,
-    DARK_THRESHOLD = 20
+    DARK_THRESHOLD = 40
   };
 
 
