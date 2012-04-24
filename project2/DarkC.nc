@@ -65,10 +65,7 @@ implementation
       call Light.read();
 
     if(red_on) // If some handler told us we should turn on the LED for this period, do so
-      {
 	call Leds.led0On();
-	red_on = FALSE;
-      }
     else
       call Leds.led0Off();
   }
@@ -80,10 +77,7 @@ implementation
       call Light.read();
 
     if(green_on) // Turn on the LED if a handler signalled for it
-      {
 	call Leds.led1On();
-	green_on = FALSE;
-      }
     else
       call Leds.led1Off();
   }
@@ -99,41 +93,29 @@ implementation
 
   event void Light.readDone(error_t ok, uint16_t val)
   {
+    uint8_t curr_state;
+
     if(ok == SUCCESS && val < DARK_THRESHOLD) // If we detected darkness
-      {
-	// If we're red, send a packet to the serial port if our state changed, too.  
-	if(IS_RED && (my_last_state == STATE_LIGHT))
-	  notifyChange(TOS_NODE_ID, IS_RED ? MOTE_RED : MOTE_GREEN, STATE_DARK);
-
-	if(IS_RED) // Turn on our respective LED
-	  red_on = TRUE;
-	else
-	  green_on = TRUE;
-	
-	// Then signal the others, if we weren't just dark
-	if(my_last_state == STATE_LIGHT)
-	  reportTheft(STATE_DARK);
-
-	my_last_state = STATE_DARK; // Update our state for the next sample
-      }
+	curr_state = STATE_DARK;
     else // Otherwise, we saw light, so turn off the LED belonging to us
+	curr_state = STATE_LIGHT;
+
+    // Update our LED states based on the color
+    if(IS_RED)
+      red_on = (curr_state == STATE_DARK) ? TRUE : FALSE;
+    else
+      green_on = (curr_state == STATE_DARK) ? TRUE : FALSE;
+    
+    if(my_last_state != curr_state) // If our state changed
       {
+	reportTheft(curr_state); // Notify the other sensors
 
-	// Signal the others if we just changed state
-	if(my_last_state == STATE_DARK)
-	  reportTheft(STATE_LIGHT);
-
-	// If we're red, notify the serial port we just changed state
-	if(IS_RED && (my_last_state == STATE_DARK))
-	  notifyChange(TOS_NODE_ID, IS_RED ? MOTE_RED : MOTE_GREEN, STATE_LIGHT);
-
-	my_last_state = STATE_LIGHT; // Update our state for the next sample
-
-	if(IS_RED)
-	  red_on = FALSE;
-	else
-	  green_on = FALSE;
+	if(IS_RED) // Notify the serial port, if necessary
+	  notifyChange(TOS_NODE_ID, IS_RED ? MOTE_RED : MOTE_GREEN, curr_state);
       }
+    
+    // Update our last state so we can track satte changes.  
+    my_last_state = curr_state;
   }
 
   event void AMControl.startDone(error_t error)
@@ -172,10 +154,10 @@ implementation
 	pkt = (theft_t *)payload;
 
 	// If we get a message, it belongs to the other sensor
-	if(IS_RED) 
-	  green_on = TRUE; // So turn on the LED that doesn't belong to us
+	if(IS_RED)
+	  green_on = (pkt->state == STATE_DARK) ? TRUE : FALSE;
 	else
-	  red_on = TRUE;
+	  red_on = (pkt->state == STATE_DARK) ? TRUE : FALSE;
 
 	// If we're red, notify the serial port we got a message from green
 	if(IS_RED)
@@ -185,6 +167,7 @@ implementation
     return msg;
   }
 
+  // No need to do anything here...
   event void SerialControl.startDone(error_t error)
   {
   }
