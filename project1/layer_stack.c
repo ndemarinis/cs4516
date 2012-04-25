@@ -238,19 +238,20 @@ void *init_physical_layer_send(void *info)
 
       if(frame_out.type == FRAME_TYPE_FRAME) 
 	{
-	  if(!(++((fds->stack)->total_frames_sent) % FRAME_KILL_EVERY_N_FRAMES))
+	  if(!((++((fds->stack)->total_frames_sent)) % FRAME_KILL_EVERY_N_FRAMES))
 	    {
-	      dprintf(DID_DLL_INFO, "PHY:  Injecting error in frame %d\n", frame_out.seq);
+	      dprintf(DID_DLL_INFO, "PHY:  Injecting error in frame %d, %d sent\n", 
+		      frame_out.seq, (fds->stack)->total_frames_sent);
 	      frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	    }
 	  else
 	    (fds->stack)->total_good_frames_sent++;
-
+	  
 	  // We're sending a whole frame, so just set the buffer accordingly
 	  buffer_to_send = (char *)&frame_out;
 	  len_to_send = sizeof(struct frame);
 	}
-
+      
       if(frame_out.type == FRAME_TYPE_ACK)
 	{
 	  if(!(++((fds->stack)->total_acks_sent) % FRAME_KILL_EVERY_N_ACKS))
@@ -702,7 +703,7 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
   pthread_mutex_lock(&(stack->net_dl_wire_lock));
   if(stack->net_to_dl_frame_size == -1)
     rv = PIPE_ERROR;
-  else if(stack->net_to_dl_frame_size && frames_buffered < (SLIDING_WINDOW_SIZE + 1))
+  else if(stack->net_to_dl_frame_size && frames_buffered < SLIDING_WINDOW_SIZE)
     {
       if((bytes_read = read(net_fd, buffer, sizeof(struct packet_segment))) <= 0)
 	rv = PIPE_ERROR;

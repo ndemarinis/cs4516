@@ -30,7 +30,7 @@
 #define MAX_PACKET_SIZE 260
 
 #define MAX_SEQ 255
-#define SLIDING_WINDOW_SIZE 4
+#define SLIDING_WINDOW_SIZE 4 // Oops.  We were actually doing Go Back 5.  
 
 #define FRAME_TYPE_FRAME 0xBE
 #define FRAME_TYPE_ACK   0xEF
