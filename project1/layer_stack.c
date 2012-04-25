@@ -159,6 +159,7 @@ void *init_layer_stack(void *info)
   s_info->total_good_acks_recvd = 0;
   s_info->total_bad_acks_recvd = 0;
   s_info->total_dup_frames_recvd = 0;
+  s_info->total_bad_frames_recvd = 0;
 
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -188,6 +189,7 @@ void *init_layer_stack(void *info)
   pthread_join(t_phys_recv, NULL);
 
   printf("Successfully terminated!\n");
+#if 0
   close(in->clnt_sock); // Close the socket so the client handler dies
   close(pipe_read(in->app_layer_pipes));
   close(pipe_write(in->app_layer_pipes));
@@ -205,7 +207,7 @@ void *init_layer_stack(void *info)
   
   close((s_info->phys_send_info).in);
   close((s_info->phys_recv_info).out);
-
+#endif
   print_layer_stack_statistics(s_info);
 
   pthread_exit(NULL);
@@ -282,6 +284,7 @@ void *init_physical_layer_send(void *info)
 	}
     }
   
+  dprintf(DID_INFO, "PHY:  Send thread entered termination handler!\n");
   close(fds->in);
   close(fds->out);
   pthread_exit(NULL);
@@ -677,7 +680,7 @@ void *init_physical_layer_recv(void *info)
 	break;
     }
 
-  dprintf(DID_INFO, "PHY:  Entered termination handler!\n");
+  dprintf(DID_INFO, "PHY:  Recv thread entered termination handler!\n");
 
   pthread_mutex_lock(&((fds->stack)->phys_dl_wire_lock));
   (fds->stack)->phys_to_dl_frame_size = -1;

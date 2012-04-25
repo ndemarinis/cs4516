@@ -125,6 +125,12 @@ void *handle_client(void *data){
         //Wait for a packet to come in
         bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
 
+	if(!bytes_read) // If we read nothing, it's time to terminate.  
+	  {
+	    dprintf(DID_INFO, "APP:  Read 0 bytes from layer stack.  Terminating!\n");
+	    break;
+	  }
+
         int opcode = client_p.opcode;
         //login
         if (opcode == __LOGIN_CODE){
