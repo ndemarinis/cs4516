@@ -19,7 +19,7 @@
 
 #define DID_DEFAULT_PORT 4516
 #define MAX_PENDING 2
-#define MAX_CLIENTS 5
+#define MAX_CLIENTS 1
 
 #define __PIC_TOO_LARGE_CODE 0x01
 #define __NO_PIC_ID_CODE 0x02
@@ -36,8 +36,6 @@
 #define __QUERY_PIC_CODE 8
 #define __CONNECT_PIC_CODE 6
 #define __LOGOUT_CODE 7
-
-#define __MAX_IMAGE_SIZE 1024*1000
 
 #define MAX_FILENAME_SIZE 64 // Maximum size of filenames for images
 

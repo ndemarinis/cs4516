@@ -34,19 +34,6 @@ void send_frame(int fd, pid_t id,
 uint16_t compute_checksum(struct frame *frame);
 void print_layer_stack_statistics(struct layer_stack *stack);
 
-// Create space for all of the info we need to send to each thread in each stack
-struct layer_stack stack_info[MAX_CLIENTS];
-struct layer_info net_send_info, net_recv_info; // FDs for each end of the pipe for each layer
-struct layer_info phys_send_info, phys_recv_info;
-struct bidirectional_layer_info dl_info;
-
-//pthread_mutex_t net_dl_wire_lock;
-//pthread_mutex_t phys_dl_wire_lock;
-//uint32_t net_to_dl_frame_size = 0;
-//uint32_t phys_to_dl_frame_size = 0;
-
-int total_frames_sent = 0;
-int total_acks_sent = 0;
 
 // Define a timeval for the maximum timeout
 struct timeval max_wait_time;
@@ -198,7 +185,10 @@ void *init_layer_stack(void *info)
   // Just wait for the thread holding the socket.  When the app layer closes it, we're done.  
   pthread_join(t_phys_recv, NULL);
 
-  printf("Client %d Successfully terminated!\n", s_info->id);
+  print_layer_stack_statistics(s_info);
+
+  printf("Client %d Successfully terminated!\n", s_info->id);  
+
 
   pthread_exit(NULL);
 }

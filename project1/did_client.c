@@ -46,6 +46,10 @@ int main(int argc, char *argv[]){
 
     pid_t pid = getpid(); // Store our PID to send to the server
 
+    // Check command line arguments
+    if(argc != 2)
+      die_with_error("Usage:  did_client <hostname of server>");
+
     srv_ip = argv[1];
 
     // Create a TCP socket for the connection
@@ -129,7 +133,7 @@ int main(int argc, char *argv[]){
                     continue;
                 }
             } else {
-		printf("Only 'login' request may be done now.");
+		printf("Only 'login' request may be done now.\n");
 	    }
         }
 	else 
@@ -228,13 +232,13 @@ int main(int argc, char *argv[]){
 			    //parse the string of data back into a response structure
 			    char *tmp = strtok(p.payload, ",");
 			    while(tmp){
-				char *recordID;
+				char recordID[__ID_SIZE];
 				strcpy(recordID, tmp);
 				tmp = strtok(NULL, ",");
-				char *firstName;
+				char firstName[__FIRST_NAME_SIZE];
 				strcpy(firstName, tmp);
 				tmp = strtok(NULL, ",");
-				char *lastName;
+				char lastName[__LAST_NAME_SIZE];
 				strcpy(lastName, tmp);
 				tmp = strtok(NULL, ",");
 				printf("\t\tRecordID: %s\tName: %s, %s\n", recordID, lastName, firstName);

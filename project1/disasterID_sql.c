@@ -18,12 +18,6 @@
 #define __ADD_PICTURE_SQL "INSERT INTO tblPictures (first_name, last_name, data) VALUES (?,?,?)"
 #define __QUERY_PICTURE_SQL "SELECT data FROM tblPictures WHERE id_number = ? ORDER BY id_number LIMIT 1"
 #define __CONNECT_PICTURE_TO_RECORD_SQL "INSERT INTO tblPictureIdentified (picture_id, body_id) VALUES (?,?)"
-#define __NAME_SIZE 15
-#define __FIRST_NAME_SIZE 15
-#define __LAST_NAME_SIZE 20
-#define __LOCATION_SIZE 36
-#define __ID_SIZE 9
-#define __MAX_IMAGE_SIZE 1024*1000
 
 //Server Information
 MYSQL *conn;

@@ -1,5 +1,8 @@
 README
+Team 5
 Nicholas DeMarinis
+Ian Lonergan
+Eric Prouty
 8 April 2012
 
 Compilation Instructions
@@ -10,10 +13,10 @@ been provided; to build the client and server, which compile to
 did_client and did_server, respectively, simply run `make`.  To build
 these binaries with debugging symbols and print statements, run `make
 test` (after running `make clean`, if the binaries have already been
-compiled).  In addition, two simple tests of the layer stack and a
-test server have been provided for demonstration purposes.  To build
-these binaries, which compile to test_did_server, echo_client_test,
-and picture_client_test, respectively, simply run `make tests`.
+compiled).  In addition, a simple test of the layer stack and a test
+server have been provided for demonstration purposes.  To build these
+binaries, which compile to test_did_server and picture_client_test,
+respectively, simply run `make tests`.
 
 The server test binary can be invoked as is with no command line
 arguments; the client binary can be invoked as follows:  
@@ -41,11 +44,24 @@ Current Functionality
 	errors, which could be eventually fixed given a larger timeframe.
 
 	The following commands have been tested sufficiently for demonstration 
-	purposes.  Example commands are provided below.  
+	purposes with successful cases.  Example commands are provided below.  
 		- Login:  login Ian
+		- Create Record:  create John Smith Worcester
 		- Query by name:  query name Ian Lonergan
 		- Query by Location:  query location Location
+		- Update record:  update 42 Charlie Smith
 		- Add picture:  add First Last filename.jpg
+		- Logout: logout
+
+	The following commands are currently nonfunctional:  
+		- Download picture
+		- Connect picture
+	
+	- Note that the above commands listed as functional have been
+	tested and deemed functional based only on valid inputs of single
+	words.  Any edge cases, oversized messages, multiword inputs, or
+	malformed inputs have not been tested, their functionality is not
+	gauranteed.
 
 	- To provide a more complete test of the layer stack
 	implementation, test binaries have been provided, as described above,
@@ -148,4 +164,4 @@ each team member is described below:
 		- test_did_server.c and picture_client_test.c, which
 		were derived from early versions of the main server
 		and client
-		- README
+
