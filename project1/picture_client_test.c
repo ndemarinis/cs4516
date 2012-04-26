@@ -13,7 +13,9 @@
 
 #include <netdb.h>
 #include <arpa/inet.h>
+
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 
 #include "layer_stack.h"
@@ -49,6 +51,8 @@ int main(int argc, char *argv[])
   pid_t pid = getpid(); // PID to send to the server as an identifier
 
   struct packet out, in;
+
+  struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
  
   if((argc < 3) || (argc > 7))
     {
@@ -98,6 +102,9 @@ int main(int argc, char *argv[])
 
   bytes_to_read = file_len;
   
+  // Record the start time now that we're about to start processing
+  gettimeofday(&cmd_start, NULL);
+
   while(bytes_to_read > 0)
     {
       memset(file_buffer, 0, FILE_BUFFER_SIZE);
@@ -164,6 +171,13 @@ int main(int argc, char *argv[])
 
   // Cleanup
   printf("Test Picture Client:  Done.\n"); 
+
+  // Print out the total processing time for the command
+  gettimeofday(&cmd_end, NULL);
+  timersub(&cmd_end, &cmd_start, &cmd_diff);
+  printf("Total command processing time:  %ld.%06ld s\n\n", 
+	 cmd_diff.tv_sec, cmd_diff.tv_usec);
+
   close(sock);
   exit(0);
 }
