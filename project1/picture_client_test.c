@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
-	      "Usage:  %s <Server IP> <picture filename (limit 100kb)> <dest>\n", argv[0]);
+	      "Usage:  %s <Server IP> <picture filename)> <dest>\n", argv[0]);
       exit(1);
     }
 
