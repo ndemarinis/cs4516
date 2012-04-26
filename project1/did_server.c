@@ -112,11 +112,21 @@ int main(int argc, char *argv[])
 */
 void *handle_client(void *data){
     struct client_handler_data *clnt = (struct client_handler_data *)data;
+    
     int pipes[2]; // Make a pipe to connect to the layer stack
     uint16_t cur_seq_num = 0;
+    
+    pid_t clnt_pid; // PID we receive from the client before startup
+    struct layer_stack *stack; // Work data for layer stack implementation
 
-    create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+    // Grab the client's identifier
+    if((recv(clnt->sock, &clnt_pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+      die_with_error("Error receiving PID from client!");
+
+    stack = create_layer_stack(clnt->sock, clnt_pid, pipes); // Initialize all of our layer threads
+
     sleep(1); // Wait a second for the thread creation to settle
+
 
     int bytes_read;
     struct packet client_p;

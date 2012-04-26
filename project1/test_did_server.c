@@ -21,9 +21,8 @@
 // Struct for data we send to the client handler
 struct client_handler_data
 {
-  int sock; // Just the client's fd, for now
-  pthread_t client_handler;
-  struct layer_stack *stack;
+  pthread_t thread; // Thread handler for client
+  int sock;         // Just the client's fd, for now
 };
 
 
@@ -38,6 +37,8 @@ int main(int argc, char *argv[])
   int srv_sock, clnt_sock, curr_clients = 0;
   unsigned int clnt_len;
   struct sockaddr_in srv_addr, clnt_addr;
+
+  struct client_handler_data *next_clnt;
 
   // Create our listen socket
   if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
@@ -67,15 +68,14 @@ int main(int argc, char *argv[])
       if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
 	die_with_error("accept() failed!");
       
-      client_data[curr_clients].sock = clnt_sock;
+      next_clnt = (struct client_handler_data *)malloc(sizeof(struct client_handler_data));
+      next_clnt->sock = clnt_sock;
 
-      if(curr_clients < MAX_CLIENTS)
-	pthread_create(&(client_data[curr_clients].client_handler), NULL, handle_client, 
-		       (void *)(&(client_data[curr_clients])));
+      if(curr_clients++ < MAX_CLIENTS)
+	pthread_create(&(next_clnt->thread), NULL, handle_client, 
+		       (void *)next_clnt);
       else
 	die_with_error("Too many clients!");
-
-      curr_clients++;
     }
   
   // We should never reach this.  Yet.
@@ -97,9 +97,17 @@ void *handle_client(void *data)
   char read_buffer[PIPE_BUFFER_SIZE];
   struct packet* pkt_in;
 
+  pid_t clnt_pid; // PID we receive from the cilent before startup
+  struct layer_stack *stack; // Work data for layer stack implementation
+
   memset(read_buffer, 0, PIPE_BUFFER_SIZE);
+
+  // Receive the client's PID for use as an identifier.  
+  if((recv(clnt->sock, &clnt_pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+    die_with_error("Error receiving PID from client!");
   
-  create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+  stack = create_layer_stack(clnt->sock, clnt_pid, pipes); // Initialize all of our layer threads
+
   sleep(1); // Wait for the layer stack creation to settle
 
   for(;;)

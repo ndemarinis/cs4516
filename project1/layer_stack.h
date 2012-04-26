@@ -86,6 +86,7 @@ struct stack_create_info
 {
   int clnt_sock;
   int *app_layer_pipes;
+  pid_t id;
   struct layer_stack *stack;
 };
 
@@ -107,6 +108,8 @@ struct bidirectional_layer_info // So the DLL can't run as a send and recv threa
 
 struct layer_stack
 {
+  pid_t id; // PID of the client, used for identification purposes.  
+
   struct layer_info net_send_info, net_recv_info; // FDs for each end of the pipe for each layer
   struct bidirectional_layer_info dl_info;
   struct layer_info phys_send_info, phys_recv_info;
@@ -157,7 +160,7 @@ struct ack {
   uint16_t checksum;
 };
 
-// Prototypes
-struct layer_stack *create_layer_stack(int clnt_sock, int *app_layer_pipes);
+// Prototypes - These are the only functions we want available to other source files
+struct layer_stack *create_layer_stack(int clnt_sock, pid_t id, int *app_layer_pipes);
 void die_with_error(char *msg);
 #endif

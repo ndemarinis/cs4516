@@ -44,8 +44,10 @@ int main(int argc, char *argv[])
   char file_buffer[FILE_SIZE];
   char *f_ptr = file_buffer;
   
+  pid_t pid = getpid(); // PID to send to the server as an identifier
+
   struct packet out, in;
-  
+ 
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
@@ -77,9 +79,14 @@ int main(int argc, char *argv[])
   if((connect(sock, (struct sockaddr*)(&srv_addr), sizeof(srv_addr))) < 0)
     die_with_error("connect() failed!");
  
+  // Send our PID as an identifier to the server.  
+  if((send(sock, &pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+    die_with_error("Error sending PID to server!");
+  
+  printf("Client started with PID %d\n", pid);
 
   // Make the layer stack
-  create_layer_stack(sock, pipes);
+  create_layer_stack(sock, pid, pipes);
 
   sleep(1);  // Wait for the thread creation to settle.  
 

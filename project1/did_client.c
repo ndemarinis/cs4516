@@ -39,6 +39,12 @@ int main(int argc, char *argv[]){
     struct hostent *srv_host;
     struct sockaddr_in srv_addr;
 
+    int pipes[2]; // Make a pipe to connect to the layer stack
+    struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
+    char read_buffer[PIPE_BUFFER_SIZE];
+
+    pid_t pid = getpid(); // Store our PID to send to the server
+
     srv_ip = argv[1];
 
     // Create a TCP socket for the connection
@@ -59,15 +65,16 @@ int main(int argc, char *argv[]){
     if((connect(sock, (struct sockaddr*)(&srv_addr), sizeof(srv_addr))) < 0)
         die_with_error("connect() failed!");
 
-    int pipes[2]; // Make a pipe to connect to the layer stack
-
-    struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
-
-    char read_buffer[PIPE_BUFFER_SIZE];
 
     memset(read_buffer, 0, PIPE_BUFFER_SIZE);
+
+    // Send our PID as an identifier to the server.  
+    if((send(sock, &pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+      die_with_error("Error sending PID to server!");
   
-    create_layer_stack(sock, pipes); // Initialize all of our layer threads
+    printf("Client started with PID %d\n", pid);
+
+    create_layer_stack(sock, pid, pipes); // Initialize all of our layer threads
     sleep(1); // Wait a second for the thread creation to settle.  
 
     //wait for the threads to initialize

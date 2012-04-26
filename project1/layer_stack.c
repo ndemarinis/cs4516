@@ -50,16 +50,18 @@ int total_acks_sent = 0;
 // Define a timeval for the maximum timeout
 struct timeval max_wait_time;
 
-struct layer_stack *create_layer_stack(int clnt_sock, int *app_layer_pipes)
+struct layer_stack *create_layer_stack(int clnt_sock, pid_t id, int *app_layer_pipes)
 {
   struct stack_create_info *info = (struct stack_create_info *)malloc(sizeof(struct stack_create_info));
   struct layer_stack *s_info = (struct layer_stack *)malloc(sizeof(struct layer_stack));
   pthread_t th;
 
+  // Populate the struct we're sending to the stack creation thread
   info->clnt_sock = clnt_sock;
   info->app_layer_pipes = app_layer_pipes;
   info->stack = s_info;
-
+  info->id = id;
+  
   // Create the thread, which creates the layer threads
   pthread_create(&th, NULL, init_layer_stack, (void*)info);
 
@@ -98,15 +100,22 @@ void *init_layer_stack(void *info)
 
   int num_pipes = 6;
   int *pipes[6] = {app_to_net, net_to_app, 
-		net_to_dl, dl_to_net, 
-		dl_to_phys, phys_to_dl};
+		   net_to_dl, dl_to_net, 
+		   dl_to_phys, phys_to_dl};
+
+  // Fill in the client's ID
+  s_info->id = in->id;
+  
+  dprintf(DID_INFO, "Initializing layer stack for client %d\n", s_info->id);
 
   // Make our pipes
   for(i = 0; i < num_pipes; i++)
     if(pipe(pipes[i]))
-      printf("Error creating pipe:  %s\n", strerror(errno));
+      {
+	dprintf(DID_WARN, "%d:  Error creating pipe:  %s\n", s_info->id, strerror(errno));
+      }
     else
-      printf("Created pipe:  %d -> %d\n", pipes[i][0], pipes[i][1]);
+      dprintf(DID_INFO, "%d:  Created pipe:  %d -> %d\n", s_info->id, pipes[i][0], pipes[i][1]);
   
   pipe_read(in->app_layer_pipes) = pipe_read(net_to_app);
   pipe_write(in->app_layer_pipes) = pipe_write(app_to_net);
