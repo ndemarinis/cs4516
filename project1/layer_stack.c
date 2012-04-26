@@ -416,7 +416,7 @@ void *init_network_layer_recv(void *info)
 
       if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
-	  dprintf(DID_INFO, "NET:  %d:  Appending second frame of length %d bytes to packet after %d bytes\n", 
+	  dprintf(DID_INFO, "%d:  NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
 		 (fds->stack)->id, f2.length, f1.length);
 	  memcpy(pkt + f1.length, &(f2.payload), f2.length);
 	}

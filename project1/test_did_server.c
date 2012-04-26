@@ -113,29 +113,30 @@ void *handle_client(void *data)
   for(;;)
     {
       // Just try and echo a message for now.
-      printf("APP:  Starting a test read.\n\n");
+      printf("%d:  APP:  Starting a test read.\n\n", clnt_pid);
 
       // Grab a string
       if((to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE)) <= 0)
 	{
-	  printf("APP:  Read 0 bytes from socket.  Terminating!\n");
+	  printf("%d:  APP:  Read 0 bytes from socket.  Terminating!\n", clnt_pid);
 	  break;
 	}
 
       pkt_in = (struct packet *)read_buffer;
 
-      printf("APP:  Read packet of %d bytes with payload of %d bytes\n", 
-	     to_read, pkt_in->length);
+      printf("%d:  APP:  Read packet of %d bytes with payload of %d bytes\n", 
+	     clnt_pid, to_read, pkt_in->length);
 
       // Send it straight back
-      printf("APP:  Sending packet of %d bytes back to client\n", to_read);
+      printf("%d:  APP:  Sending packet of %d bytes back to client\n", clnt_pid, to_read);
       if((bytes_written = write(pipe_write(pipes), read_buffer, to_read)) <= 0)
 	{
-	  printf("APP:  Wrote %d bytes, socket must have closed.  Terminating!\n", bytes_written);
+	  printf("%d:  APP:  Wrote %d bytes, socket must have closed.  Terminating!\n", 
+		 clnt_pid, bytes_written);
 	  break;
 	}
     }
   
-  printf("Client successfully terminated!\n");
+  printf("%d:  Client successfully terminated!\n", clnt_pid);
   pthread_exit(NULL);
 }
