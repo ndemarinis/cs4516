@@ -34,7 +34,7 @@ unsigned int fsize(char* filename);
 int main(int argc, char *argv[])
 {
   int sock, bytes_recvd, file_len, bytes_remaining_to_read, bytes_remaining_to_write, len;
-  int bytes_read, bytes_to_read, to_read_now, to_recv_now;
+  int bytes_read, bytes_to_read, to_read_now, to_recv_now, total_bytes_sent = 0;
   char *srv_ip, *file_name, *out_name;
   FILE *fp_in, *fp_out;
   
@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
   int pipes[2];
 
   char file_buffer[FILE_BUFFER_SIZE];
-  char *f_ptr = file_buffer;
+  char *f_ptr;
   
   pid_t pid = getpid(); // PID to send to the server as an identifier
 
@@ -103,11 +103,10 @@ int main(int argc, char *argv[])
       memset(file_buffer, 0, FILE_BUFFER_SIZE);
 
       // Read as much of the file as our buffer allows, or the length if it's timy
-      to_read_now = (bytes_to_read < FILE_BUFFER_SIZE) ? file_len : 
-	            (bytes_to_read > FILE_BUFFER_SIZE) ? FILE_BUFFER_SIZE 
-	                                               : bytes_to_read;
+      to_read_now = (bytes_to_read > FILE_BUFFER_SIZE) ? FILE_BUFFER_SIZE : bytes_to_read;
 
-      printf("Trying to read %d bytes\n", to_read_now);
+      printf("Trying to read %d bytes with %d bytes left\n", 
+	     to_read_now, bytes_to_read);
       if((bytes_read = read(fileno(fp_in), file_buffer, to_read_now)) != to_read_now)
 	{
 	  printf("%s\n", strerror(errno));
@@ -118,6 +117,8 @@ int main(int argc, char *argv[])
       bytes_remaining_to_read = to_read_now;
       bytes_remaining_to_write = to_read_now;
       
+      f_ptr = file_buffer;  // Set the read pointer to the beginning of the buffer.  
+
       // Send out those bytes in packets
       while(bytes_remaining_to_read > 0)
 	{
@@ -126,7 +127,11 @@ int main(int argc, char *argv[])
 	  
 	  len = (bytes_remaining_to_read > PACKET_PAYLOAD_SIZE) ? 
 	    PACKET_PAYLOAD_SIZE : bytes_remaining_to_read;
-	  printf("Sending packet with %d bytes of picture...\n", len);
+
+	  total_bytes_sent += len;
+
+	  printf("Sending packet with %d bytes.  Sent %d bytes of %d bytes\n", 
+		 len - 1, total_bytes_sent, file_len);
 	  
 	  memcpy(out.payload, f_ptr, len);
 	  
