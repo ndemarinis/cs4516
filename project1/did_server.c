@@ -37,6 +37,10 @@
 #define __CONNECT_PIC_CODE 6
 #define __LOGOUT_CODE 7
 
+#define __MAX_IMAGE_SIZE 1024*1000
+
+#define MAX_FILENAME_SIZE 64 // Maximum size of filenames for images
+
 // Struct for data we send to the client handler
 struct client_handler_data
 {
@@ -354,7 +358,7 @@ void *handle_client(void *data){
             char *pictureID = strtok(client_p.payload, "");
             int pID = atoi(pictureID);
 
-            char *pictureData;
+            char pictureData[__MAX_IMAGE_SIZE];
             int resp = queryPicture(pID, pictureData);
 
             if (resp){
@@ -364,7 +368,7 @@ void *handle_client(void *data){
                 //break the image into packets and send it back to the client!
                 //write the data into a tempory file handle for simple reading when breaking into packets
                 //base the temporary file off of the pid to ensure uniqueness
-                char *filename;
+                char filename[MAX_FILENAME_SIZE];
                 int pid = getpid();
                 char cpid[10];
                 sprintf(cpid, "%d", pid);

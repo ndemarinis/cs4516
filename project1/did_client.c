@@ -22,7 +22,8 @@
 #define RECV_BUF_SIZE       32
 #define DID_DEFAULT_PORT    4516
 
-//#define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
+#define MAX_FILENAME_SIZE 64 // Maximum size of filenames for images
+
 
 //prototypes
 void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num);
@@ -99,6 +100,7 @@ int main(int argc, char *argv[]){
         //time to handle the command... create a packet that may be used
         struct packet p;
 	memset(&p, 0, sizeof(struct packet));
+
         //handle the login command
         if (!loggedIn){
             if (strcmp(token, "login") == 0){
@@ -393,7 +395,8 @@ int main(int argc, char *argv[]){
 			unsigned long sizeOfImage = atol(p.payload);
 
 			//all packets received from now on contain image data!
-			char *filename;
+			char filename[MAX_FILENAME_SIZE];
+			
 			//filename will be <pictureID.jpg>
 			strcpy(filename, pictureID);
 			strcat(filename, ".jpg");

@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -24,7 +25,7 @@
 #define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
 #define TERM_STR_LEN 2
 
-#define FILE_SIZE 100000
+#define FILE_BUFFER_SIZE (32*1024) // Size of file to read, half the pipe buffer size for safety
 
 // Prototypes
 void die_with_error(char *msg);
@@ -32,7 +33,8 @@ unsigned int fsize(char* filename);
 
 int main(int argc, char *argv[])
 {
-  int sock, bytes_recvd, file_len, bytes_remaining, len;
+  int sock, bytes_recvd, file_len, bytes_remaining_to_read, bytes_remaining_to_write, len;
+  int bytes_read, bytes_to_read, to_read_now, to_recv_now;
   char *srv_ip, *file_name, *out_name;
   FILE *fp_in, *fp_out;
   
@@ -41,7 +43,7 @@ int main(int argc, char *argv[])
 
   int pipes[2];
 
-  char file_buffer[FILE_SIZE];
+  char file_buffer[FILE_BUFFER_SIZE];
   char *f_ptr = file_buffer;
   
   pid_t pid = getpid(); // PID to send to the server as an identifier
@@ -94,33 +96,61 @@ int main(int argc, char *argv[])
   file_len = fsize(file_name);
   fp_out = fopen(out_name, "w+");
 
-  if(read(fileno(fp_in), file_buffer, file_len) != file_len)
-    die_with_error("Error reading file!");
-
-  bytes_remaining = file_len;
-
-  while(bytes_remaining > 0)
+  bytes_to_read = file_len;
+  
+  while(bytes_to_read > 0)
     {
-      memset(&out, 0, sizeof(struct packet));
-      memset(&in, 0, sizeof(struct packet));
+      memset(file_buffer, 0, FILE_BUFFER_SIZE);
 
-      len = (bytes_remaining > PACKET_PAYLOAD_SIZE) ? PACKET_PAYLOAD_SIZE : bytes_remaining;
-      printf("Sending packet with %d bytes of picture...\n", len);
+      // Read as much of the file as our buffer allows, or the length if it's timy
+      to_read_now = (bytes_to_read < FILE_BUFFER_SIZE) ? file_len : 
+	            (bytes_to_read > FILE_BUFFER_SIZE) ? FILE_BUFFER_SIZE 
+	                                               : bytes_to_read;
 
-      memcpy(out.payload, f_ptr, len);
+      printf("Trying to read %d bytes\n", to_read_now);
+      if((bytes_read = read(fileno(fp_in), file_buffer, to_read_now)) != to_read_now)
+	{
+	  printf("%s\n", strerror(errno));
+	  die_with_error("Error reading file!");
+	}
+      bytes_to_read -= bytes_read;
 
-      f_ptr += len;
-      bytes_remaining -= len;
-
-      out.length = len - 1;
-
-      if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
-	die_with_error("send() sent a different number of bytes than expected");
+      bytes_remaining_to_read = to_read_now;
+      bytes_remaining_to_write = to_read_now;
       
-      if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
-	 die_with_error("recv() failed or connection closed unexpectedly!");      
+      // Send out those bytes in packets
+      while(bytes_remaining_to_read > 0)
+	{
+	  memset(&out, 0, sizeof(struct packet));
+	  memset(&in, 0, sizeof(struct packet));
+	  
+	  len = (bytes_remaining_to_read > PACKET_PAYLOAD_SIZE) ? 
+	    PACKET_PAYLOAD_SIZE : bytes_remaining_to_read;
+	  printf("Sending packet with %d bytes of picture...\n", len);
+	  
+	  memcpy(out.payload, f_ptr, len);
+	  
+	  f_ptr += len;
+	  bytes_remaining_to_read -= len;
+	  
+	  out.length = len - 1;
+	  
+	  if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
+	    die_with_error("send() sent a different number of bytes than expected");
+	}
+      
+      // Read back those bytes as packets now so we don't overwhelm the pipes.  
+      to_recv_now = 0;
+      while(to_recv_now < bytes_remaining_to_write)
+	{
+	  if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
+	    die_with_error("recv() failed or connection closed unexpectedly!");      
+	  
+	  to_recv_now += in.length + 1;
 
-      write(fileno(fp_out), in.payload, in.length + 1);
+	  write(fileno(fp_out), in.payload, in.length + 1);
+	}
+      
     }
 
   fclose(fp_in);

@@ -713,10 +713,12 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
 
   // Try to read from our input pipe, but don't block if nothing's there
   pthread_mutex_lock(&(stack->net_dl_wire_lock));
-  if(stack->net_to_dl_frame_size == -1)
+
+  if(stack->net_to_dl_frame_size == -1) // Check if the network layer has flagged that we should terminate
     rv = PIPE_ERROR;
   else if(stack->net_to_dl_frame_size && frames_buffered < SLIDING_WINDOW_SIZE)
     {
+      dprintf(DID_DLL_INFO, "EVENT:  NET has %d bytes for us\n", stack->net_to_dl_frame_size);
       if((bytes_read = read(net_fd, buffer, sizeof(struct packet_segment))) <= 0)
 	rv = PIPE_ERROR;
       else
