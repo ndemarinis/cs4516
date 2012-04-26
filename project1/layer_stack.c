@@ -161,7 +161,7 @@ void *init_layer_stack(void *info)
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  printf("Creating layer threads...\n");
+  dprintf(DID_INFO, "%d:  Creating layer threads...\n", s_info->id);
   if((rv = pthread_create(&t_net_send, NULL, init_network_layer_send, 
 			  (void*)&(s_info->net_send_info))))
     printf("Error creating thread!\n");

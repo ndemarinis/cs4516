@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
                             (void *)next_clnt);
 	  }
         else
-            die_with_error("Too many clients!");
+            printf("Client refused!  Too many clients are connected!");
     }
 
     // We should never reach this.  Yet.

@@ -128,12 +128,14 @@ int main(int argc, char *argv[]){
                     loggedIn = 1;
                     printf("DID Client: Succesfully logged in!\n");
                 } else {
-                    //failed login so move onto the next iteration of the client
-                    printf("DID Client: Invalid login... try again.\n");
-                    continue;
+		  //failed login so move onto the next iteration of the client
+		  printf("DID Client: Invalid login... try again.\n");
+		  continue;
                 }
-            } else {
-		printf("Only 'login' request may be done now.\n");
+            } else if (strcmp(token, "quit") == 0){ 
+	      break;
+	    } else {
+	      printf("Only 'login' request may be done now.\n");
 	    }
         }
 	else 
