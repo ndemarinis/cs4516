@@ -1,0 +1,8 @@
+COMPONENT=MoteNetAppC
+
+CC420_CHANNEL=15
+CFLAGS = -DCC2420_DEF_RFPower=3
+
+#CFLAGS += -I$(TOSDIR)/lib/T2Hack
+
+include $(MAKERULES)
