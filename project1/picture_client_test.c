@@ -9,10 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <netdb.h>
 #include <arpa/inet.h>
+
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 
 #include "layer_stack.h"
@@ -24,7 +27,7 @@
 #define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
 #define TERM_STR_LEN 2
 
-#define FILE_SIZE 100000
+#define FILE_BUFFER_SIZE (32*1024) // Size of file to read, half the pipe buffer size for safety
 
 // Prototypes
 void die_with_error(char *msg);
@@ -32,7 +35,8 @@ unsigned int fsize(char* filename);
 
 int main(int argc, char *argv[])
 {
-  int sock, bytes_recvd, file_len, bytes_remaining, len;
+  int sock, bytes_recvd, file_len, bytes_remaining_to_read, bytes_remaining_to_write, len;
+  int bytes_read, bytes_to_read, to_read_now, to_recv_now, total_bytes_sent = 0;
   char *srv_ip, *file_name, *out_name;
   FILE *fp_in, *fp_out;
   
@@ -41,15 +45,19 @@ int main(int argc, char *argv[])
 
   int pipes[2];
 
-  char file_buffer[FILE_SIZE];
-  char *f_ptr = file_buffer;
+  char file_buffer[FILE_BUFFER_SIZE];
+  char *f_ptr;
   
+  pid_t pid = getpid(); // PID to send to the server as an identifier
+
   struct packet out, in;
-  
+
+  struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
+ 
   if((argc < 3) || (argc > 7))
     {
       fprintf(stderr, 
-	      "Usage:  %s <Server IP> <picture filename (limit 100kb)> <dest>\n", argv[0]);
+	      "Usage:  %s <Server IP> <picture filename)> <dest>\n", argv[0]);
       exit(1);
     }
 
@@ -77,9 +85,14 @@ int main(int argc, char *argv[])
   if((connect(sock, (struct sockaddr*)(&srv_addr), sizeof(srv_addr))) < 0)
     die_with_error("connect() failed!");
  
+  // Send our PID as an identifier to the server.  
+  if((send(sock, &pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+    die_with_error("Error sending PID to server!");
+  
+  printf("Client started with PID %d\n", pid);
 
   // Make the layer stack
-  create_layer_stack(sock, pipes);
+  create_layer_stack(sock, pid, pipes);
 
   sleep(1);  // Wait for the thread creation to settle.  
 
@@ -87,33 +100,69 @@ int main(int argc, char *argv[])
   file_len = fsize(file_name);
   fp_out = fopen(out_name, "w+");
 
-  if(read(fileno(fp_in), file_buffer, file_len) != file_len)
-    die_with_error("Error reading file!");
+  bytes_to_read = file_len;
+  
+  // Record the start time now that we're about to start processing
+  gettimeofday(&cmd_start, NULL);
 
-  bytes_remaining = file_len;
-
-  while(bytes_remaining > 0)
+  while(bytes_to_read > 0)
     {
-      memset(&out, 0, sizeof(struct packet));
-      memset(&in, 0, sizeof(struct packet));
+      memset(file_buffer, 0, FILE_BUFFER_SIZE);
 
-      len = (bytes_remaining > PACKET_PAYLOAD_SIZE) ? PACKET_PAYLOAD_SIZE : bytes_remaining;
-      printf("Sending packet with %d bytes of picture...\n", len);
+      // Read as much of the file as our buffer allows, or the length if it's timy
+      to_read_now = (bytes_to_read > FILE_BUFFER_SIZE) ? FILE_BUFFER_SIZE : bytes_to_read;
 
-      memcpy(out.payload, f_ptr, len);
+      printf("Trying to read %d bytes with %d bytes left\n", 
+	     to_read_now, bytes_to_read);
+      if((bytes_read = read(fileno(fp_in), file_buffer, to_read_now)) != to_read_now)
+	{
+	  printf("%s\n", strerror(errno));
+	  die_with_error("Error reading file!");
+	}
+      bytes_to_read -= bytes_read;
 
-      f_ptr += len;
-      bytes_remaining -= len;
-
-      out.length = len - 1;
-
-      if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
-	die_with_error("send() sent a different number of bytes than expected");
+      bytes_remaining_to_read = to_read_now;
+      bytes_remaining_to_write = to_read_now;
       
-      if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
-	 die_with_error("recv() failed or connection closed unexpectedly!");      
+      f_ptr = file_buffer;  // Set the read pointer to the beginning of the buffer.  
 
-      write(fileno(fp_out), in.payload, in.length + 1);
+      // Send out those bytes in packets
+      while(bytes_remaining_to_read > 0)
+	{
+	  memset(&out, 0, sizeof(struct packet));
+	  memset(&in, 0, sizeof(struct packet));
+	  
+	  len = (bytes_remaining_to_read > PACKET_PAYLOAD_SIZE) ? 
+	    PACKET_PAYLOAD_SIZE : bytes_remaining_to_read;
+
+	  total_bytes_sent += len;
+
+	  printf("Sending packet with %d bytes.  Sent %d bytes of %d bytes\n", 
+		 len - 1, total_bytes_sent, file_len);
+	  
+	  memcpy(out.payload, f_ptr, len);
+	  
+	  f_ptr += len;
+	  bytes_remaining_to_read -= len;
+	  
+	  out.length = len - 1;
+	  
+	  if((write(pipe_write(pipes), &out, sizeof(struct packet)) != sizeof(struct packet)))
+	    die_with_error("send() sent a different number of bytes than expected");
+	}
+      
+      // Read back those bytes as packets now so we don't overwhelm the pipes.  
+      to_recv_now = 0;
+      while(to_recv_now < bytes_remaining_to_write)
+	{
+	  if((bytes_recvd = read(pipe_read(pipes), &in, sizeof(struct packet)) <= 0))
+	    die_with_error("recv() failed or connection closed unexpectedly!");      
+	  
+	  to_recv_now += in.length + 1;
+
+	  write(fileno(fp_out), in.payload, in.length + 1);
+	}
+      
     }
 
   fclose(fp_in);
@@ -122,6 +171,13 @@ int main(int argc, char *argv[])
 
   // Cleanup
   printf("Test Picture Client:  Done.\n"); 
+
+  // Print out the total processing time for the command
+  gettimeofday(&cmd_end, NULL);
+  timersub(&cmd_end, &cmd_start, &cmd_diff);
+  printf("Total command processing time:  %ld.%06ld s\n\n", 
+	 cmd_diff.tv_sec, cmd_diff.tv_usec);
+
   close(sock);
   exit(0);
 }

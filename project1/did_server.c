@@ -19,7 +19,7 @@
 
 #define DID_DEFAULT_PORT 4516
 #define MAX_PENDING 2
-#define MAX_CLIENTS 5
+#define MAX_CLIENTS 1
 
 #define __PIC_TOO_LARGE_CODE 0x01
 #define __NO_PIC_ID_CODE 0x02
@@ -36,6 +36,8 @@
 #define __QUERY_PIC_CODE 8
 #define __CONNECT_PIC_CODE 6
 #define __LOGOUT_CODE 7
+
+#define MAX_FILENAME_SIZE 64 // Maximum size of filenames for images
 
 // Struct for data we send to the client handler
 struct client_handler_data
@@ -97,7 +99,7 @@ int main(int argc, char *argv[])
                             (void *)next_clnt);
 	  }
         else
-            die_with_error("Too many clients!");
+            printf("Client refused!  Too many clients are connected!");
     }
 
     // We should never reach this.  Yet.
@@ -112,11 +114,21 @@ int main(int argc, char *argv[])
 */
 void *handle_client(void *data){
     struct client_handler_data *clnt = (struct client_handler_data *)data;
+    
     int pipes[2]; // Make a pipe to connect to the layer stack
     uint16_t cur_seq_num = 0;
+    
+    pid_t clnt_pid; // PID we receive from the client before startup
+    struct layer_stack *stack; // Work data for layer stack implementation
 
-    create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+    // Grab the client's identifier
+    if((recv(clnt->sock, &clnt_pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+      die_with_error("Error receiving PID from client!");
+
+    stack = create_layer_stack(clnt->sock, clnt_pid, pipes); // Initialize all of our layer threads
+
     sleep(1); // Wait a second for the thread creation to settle
+
 
     int bytes_read;
     struct packet client_p;
@@ -124,6 +136,12 @@ void *handle_client(void *data){
     while(1){
         //Wait for a packet to come in
         bytes_read = read(pipe_read(pipes), &client_p, sizeof(struct packet));
+
+	if(!bytes_read) // If we read nothing, it's time to terminate.  
+	  {
+	    dprintf(DID_INFO, "APP:  Read 0 bytes from layer stack.  Terminating!\n");
+	    break;
+	  }
 
         int opcode = client_p.opcode;
         //login
@@ -338,7 +356,7 @@ void *handle_client(void *data){
             char *pictureID = strtok(client_p.payload, "");
             int pID = atoi(pictureID);
 
-            char *pictureData;
+            char pictureData[__MAX_IMAGE_SIZE];
             int resp = queryPicture(pID, pictureData);
 
             if (resp){
@@ -348,7 +366,7 @@ void *handle_client(void *data){
                 //break the image into packets and send it back to the client!
                 //write the data into a tempory file handle for simple reading when breaking into packets
                 //base the temporary file off of the pid to ensure uniqueness
-                char *filename;
+                char filename[MAX_FILENAME_SIZE];
                 int pid = getpid();
                 char cpid[10];
                 sprintf(cpid, "%d", pid);

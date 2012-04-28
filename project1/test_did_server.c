@@ -21,9 +21,8 @@
 // Struct for data we send to the client handler
 struct client_handler_data
 {
-  int sock; // Just the client's fd, for now
-  pthread_t client_handler;
-  struct layer_stack *stack;
+  pthread_t thread; // Thread handler for client
+  int sock;         // Just the client's fd, for now
 };
 
 
@@ -38,6 +37,8 @@ int main(int argc, char *argv[])
   int srv_sock, clnt_sock, curr_clients = 0;
   unsigned int clnt_len;
   struct sockaddr_in srv_addr, clnt_addr;
+
+  struct client_handler_data *next_clnt;
 
   // Create our listen socket
   if((srv_sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
@@ -67,15 +68,14 @@ int main(int argc, char *argv[])
       if((clnt_sock = accept(srv_sock, (struct sockaddr *)(&clnt_addr), &clnt_len)) < 0)
 	die_with_error("accept() failed!");
       
-      client_data[curr_clients].sock = clnt_sock;
+      next_clnt = (struct client_handler_data *)malloc(sizeof(struct client_handler_data));
+      next_clnt->sock = clnt_sock;
 
-      if(curr_clients < MAX_CLIENTS)
-	pthread_create(&(client_data[curr_clients].client_handler), NULL, handle_client, 
-		       (void *)(&(client_data[curr_clients])));
+      if(curr_clients++ < MAX_CLIENTS)
+	pthread_create(&(next_clnt->thread), NULL, handle_client, 
+		       (void *)next_clnt);
       else
 	die_with_error("Too many clients!");
-
-      curr_clients++;
     }
   
   // We should never reach this.  Yet.
@@ -97,37 +97,46 @@ void *handle_client(void *data)
   char read_buffer[PIPE_BUFFER_SIZE];
   struct packet* pkt_in;
 
+  pid_t clnt_pid; // PID we receive from the cilent before startup
+  struct layer_stack *stack; // Work data for layer stack implementation
+
   memset(read_buffer, 0, PIPE_BUFFER_SIZE);
+
+  // Receive the client's PID for use as an identifier.  
+  if((recv(clnt->sock, &clnt_pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+    die_with_error("Error receiving PID from client!");
   
-  create_layer_stack(clnt->sock, pipes); // Initialize all of our layer threads
+  stack = create_layer_stack(clnt->sock, clnt_pid, pipes); // Initialize all of our layer threads
+
   sleep(1); // Wait for the layer stack creation to settle
 
   for(;;)
     {
       // Just try and echo a message for now.
-      printf("APP:  Starting a test read.\n\n");
+      printf("%d:  APP:  Starting a test read.\n\n", clnt_pid);
 
       // Grab a string
       if((to_read = read(pipe_read(pipes), read_buffer, PIPE_BUFFER_SIZE)) <= 0)
 	{
-	  printf("APP:  Read 0 bytes from socket.  Terminating!\n");
+	  printf("%d:  APP:  Read 0 bytes from socket.  Terminating!\n", clnt_pid);
 	  break;
 	}
 
       pkt_in = (struct packet *)read_buffer;
 
-      printf("APP:  Read packet of %d bytes with payload of %d bytes\n", 
-	     to_read, pkt_in->length);
+      printf("%d:  APP:  Read packet of %d bytes with payload of %d bytes\n", 
+	     clnt_pid, to_read, pkt_in->length);
 
       // Send it straight back
-      printf("APP:  Sending packet of %d bytes back to client\n", to_read);
+      printf("%d:  APP:  Sending packet of %d bytes back to client\n", clnt_pid, to_read);
       if((bytes_written = write(pipe_write(pipes), read_buffer, to_read)) <= 0)
 	{
-	  printf("APP:  Wrote %d bytes, socket must have closed.  Terminating!\n", bytes_written);
+	  printf("%d:  APP:  Wrote %d bytes, socket must have closed.  Terminating!\n", 
+		 clnt_pid, bytes_written);
 	  break;
 	}
     }
   
-  printf("Client successfully terminated!\n");
+  printf("%d:  Client successfully terminated!\n", clnt_pid);
   pthread_exit(NULL);
 }

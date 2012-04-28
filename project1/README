@@ -1,5 +1,8 @@
 README
+Team 5
 Nicholas DeMarinis
+Ian Lonergan
+Eric Prouty
 8 April 2012
 
 Compilation Instructions
@@ -10,10 +13,10 @@ been provided; to build the client and server, which compile to
 did_client and did_server, respectively, simply run `make`.  To build
 these binaries with debugging symbols and print statements, run `make
 test` (after running `make clean`, if the binaries have already been
-compiled).  In addition, two simple tests of the layer stack and a
-test server have been provided for demonstration purposes.  To build
-these binaries, which compile to test_did_server, echo_client_test,
-and picture_client_test, respectively, simply run `make tests`.
+compiled).  In addition, a simple test of the layer stack and a test
+server have been provided for demonstration purposes.  To build these
+binaries, which compile to test_did_server and picture_client_test,
+respectively, simply run `make tests`.
 
 The server test binary can be invoked as is with no command line
 arguments; the client binary can be invoked as follows:  
@@ -25,7 +28,48 @@ Client Syntax
 
 As a proof of concept implementation, this application layer for the
 DID client and server supports commands with the syntax as defined in
-the provided Syntax.txt.
+the provided Syntax.txt.  Functioning commands are described in the 
+Functionality section.  
+
+Current Functionality
+	
+	- The layer stack has been tested extensively and appears to
+	function according to the design requirements given the implementation
+	details discussed in the next section.
+
+	- The application layer is only partially functional due as
+	the available timeframe did not allow for all commands to be
+	completely debugged.  Most of the debugging issues encountered for the
+	commands that were tested were simple buffer overflow or pointer
+	errors, which could be eventually fixed given a larger timeframe.
+
+	The following commands have been tested sufficiently for demonstration 
+	purposes with successful cases.  Example commands are provided below.  
+		- Login:  login Ian
+		- Create Record:  create John Smith Worcester
+		- Query by name:  query name Ian Lonergan
+		- Query by Location:  query location Location
+		- Update record:  update 42 Charlie Smith
+		- Add picture:  add First Last filename.jpg
+		- Logout: logout
+
+	The following commands are currently nonfunctional:  
+		- Download picture
+		- Connect picture
+	
+	- Note that the above commands listed as functional have been
+	tested and deemed functional based only on valid inputs of single
+	words.  Any edge cases, oversized messages, multiword inputs, or
+	malformed inputs have not been tested, their functionality is not
+	gauranteed.
+
+	- To provide a more complete test of the layer stack
+	implementation, test binaries have been provided, as described above,
+	to demonstrate the transmission of an image to the server and back.
+	While this is definitely not as robust as the application layer, it
+	provides an accurate demonstration of the layer stack's functionality
+	under heavy load.
+
 
 Implementation Details
 
@@ -38,11 +82,12 @@ The following aspects of this impelementation have changed from the design repor
 	number; as suggested, this was deemed unnecessary.
 
 	- Support for multiple clients is currently nonfunctional.
-	While the thread-creation procedures are functional, the application
-	layer's methods for string processing in the client and server are 
-	not thread-safe.  As such, the maximum number of clients has been
-	set to 1.  Given more time, this implementation could be easily 
-	refactored for thread-safety.  
+	While the thread-creation procedures for multiple clients in
+	the layer stack are functional, the application layer's methods for
+	string processing in the client and server are not thread-safe.  As
+	such, the maximum number of clients has been set to 1.  Given more
+	time, this implementation could be easily refactored for
+	thread-safety given a larger timeframe.
 
   - Layer Stack (Network, DL, Physical Layers)
 	- Interlayer communication was handled using pipes between
@@ -74,7 +119,7 @@ The following aspects of this impelementation have changed from the design repor
  	than their specified amounts, but this proved dangerously unpredictable
 	with the defined pipe implementation.  As the layer stack was developed
 	incrementally, this behavior was defined first with the goal of removing
-	the restriction before the limitation of the pies could be fully realized.  
+	the restriction before the limitation of the pipes could be fully realized.  
 	With an expanded timeframe, this implementation could be refactored to
 	maximize performance.  However, given the limitations of this proof of
 	concept assignment, the padded implementation proved both safe and feasible
@@ -90,5 +135,33 @@ The following aspects of this impelementation have changed from the design repor
 	of packet processing for this implementation that would be tedious to handle
 	at the application layer.  
 
+Authorship
 
+Each member of the team contributed to a specific section of this
+implementation.  Based on this, each member's work is divided by
+source file, rather than by function.  The specific contribution of
+each team member is described below:
+
+	- Eric - Application Layer Implementation
+		- did_client.c
+		- did_server.c
+		- Syntax.txt
+
+	- Ian - Database setup, database implementation, application
+	layer debugging
+		- disasterID_sql.c
+		- disasterID_sql.h
+		- Edits to did_client.c and did_server.c
+
+	- Nick - Layer stack implementation, initial client and
+	server, some application layer debugging, test binaries
+		- layer_stack.c
+		- layer_stack.h
+		- Socket and thread framework for did_client.c and
+		did_server.c
+		- Some edits to application layer processing for
+		did_client.c and did_server.c
+		- test_did_server.c and picture_client_test.c, which
+		were derived from early versions of the main server
+		and client
 

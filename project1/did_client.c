@@ -22,7 +22,8 @@
 #define RECV_BUF_SIZE       32
 #define DID_DEFAULT_PORT    4516
 
-//#define TERMINATOR_STR { 0x10, 0x03 } // Our termination sequence, a string of two bytes
+#define MAX_FILENAME_SIZE 64 // Maximum size of filenames for images
+
 
 //prototypes
 void send_packet(int pipes[], struct packet p, uint16_t *cur_seq_num);
@@ -38,6 +39,16 @@ int main(int argc, char *argv[]){
 
     struct hostent *srv_host;
     struct sockaddr_in srv_addr;
+
+    int pipes[2]; // Make a pipe to connect to the layer stack
+    struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
+    char read_buffer[PIPE_BUFFER_SIZE];
+
+    pid_t pid = getpid(); // Store our PID to send to the server
+
+    // Check command line arguments
+    if(argc != 2)
+      die_with_error("Usage:  did_client <hostname of server>");
 
     srv_ip = argv[1];
 
@@ -59,15 +70,16 @@ int main(int argc, char *argv[]){
     if((connect(sock, (struct sockaddr*)(&srv_addr), sizeof(srv_addr))) < 0)
         die_with_error("connect() failed!");
 
-    int pipes[2]; // Make a pipe to connect to the layer stack
-
-    struct timeval cmd_start, cmd_end, cmd_diff; // Record the start and end time for any command
-
-    char read_buffer[PIPE_BUFFER_SIZE];
 
     memset(read_buffer, 0, PIPE_BUFFER_SIZE);
+
+    // Send our PID as an identifier to the server.  
+    if((send(sock, &pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+      die_with_error("Error sending PID to server!");
   
-    create_layer_stack(sock, pipes); // Initialize all of our layer threads
+    printf("Client started with PID %d\n", pid);
+
+    create_layer_stack(sock, pid, pipes); // Initialize all of our layer threads
     sleep(1); // Wait a second for the thread creation to settle.  
 
     //wait for the threads to initialize
@@ -92,6 +104,7 @@ int main(int argc, char *argv[]){
         //time to handle the command... create a packet that may be used
         struct packet p;
 	memset(&p, 0, sizeof(struct packet));
+
         //handle the login command
         if (!loggedIn){
             if (strcmp(token, "login") == 0){
@@ -115,12 +128,14 @@ int main(int argc, char *argv[]){
                     loggedIn = 1;
                     printf("DID Client: Succesfully logged in!\n");
                 } else {
-                    //failed login so move onto the next iteration of the client
-                    printf("DID Client: Invalid login... try again.\n");
-                    continue;
+		  //failed login so move onto the next iteration of the client
+		  printf("DID Client: Invalid login... try again.\n");
+		  continue;
                 }
-            } else {
-		printf("Only 'login' request may be done now.");
+            } else if (strcmp(token, "quit") == 0){ 
+	      break;
+	    } else {
+	      printf("Only 'login' request may be done now.\n");
 	    }
         }
 	else 
@@ -219,13 +234,13 @@ int main(int argc, char *argv[]){
 			    //parse the string of data back into a response structure
 			    char *tmp = strtok(p.payload, ",");
 			    while(tmp){
-				char *recordID;
+				char recordID[__ID_SIZE];
 				strcpy(recordID, tmp);
 				tmp = strtok(NULL, ",");
-				char *firstName;
+				char firstName[__FIRST_NAME_SIZE];
 				strcpy(firstName, tmp);
 				tmp = strtok(NULL, ",");
-				char *lastName;
+				char lastName[__LAST_NAME_SIZE];
 				strcpy(lastName, tmp);
 				tmp = strtok(NULL, ",");
 				printf("\t\tRecordID: %s\tName: %s, %s\n", recordID, lastName, firstName);
@@ -386,7 +401,8 @@ int main(int argc, char *argv[]){
 			unsigned long sizeOfImage = atol(p.payload);
 
 			//all packets received from now on contain image data!
-			char *filename;
+			char filename[MAX_FILENAME_SIZE];
+			
 			//filename will be <pictureID.jpg>
 			strcpy(filename, pictureID);
 			strcat(filename, ".jpg");

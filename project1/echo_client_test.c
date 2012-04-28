@@ -37,6 +37,8 @@ int main(int argc, char *argv[])
 
   int pipes[2];
 
+  pid_t pid = getpid(); // Store our PID to send to the server
+
   struct packet out, in;
   struct layer_stack *stack;
   
@@ -72,8 +74,14 @@ int main(int argc, char *argv[])
  
   echo_str_len = strlen(argv[2]) + 1;
 
+  // Send our PID as an identifier to the server.  
+  if((send(sock, &pid, sizeof(pid_t), 0) != sizeof(pid_t)))
+    die_with_error("Error sending PID to server!");
+  
+  printf("Client started with PID %d\n", pid);
+
   // Make the layer stack
-  stack = create_layer_stack(sock, pipes);
+  stack = create_layer_stack(sock, getpid(), pipes);
 
   sleep(1);  // Wait for the thread creation to settle.  
 

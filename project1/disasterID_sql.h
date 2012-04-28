@@ -23,6 +23,14 @@ typedef struct
 	char location[37];
 } bodyEntry;
 
+
+#define __NAME_SIZE 15
+#define __FIRST_NAME_SIZE 15
+#define __LAST_NAME_SIZE 20
+#define __LOCATION_SIZE 36
+#define __ID_SIZE 9
+#define __MAX_IMAGE_SIZE (1024*1000)
+
 int login (char *);
 int createRecord(char *, char *, char *, char *);
 int queryRecordByName(char *, char *, bodyEntry **, int *);

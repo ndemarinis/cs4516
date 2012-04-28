@@ -5,7 +5,7 @@
  */
 
 #include <fcntl.h>
-
+#include <unistd.h>
 #include <arpa/inet.h>
 
 #include <sys/types.h>
@@ -29,37 +29,27 @@ void *init_layer_stack(void *info);
 enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_fd, 
 				struct frame_window *window, int frames_buffered, int expected, 
 				char *buffer, int *bytes_read);
-void send_frame(int fd, struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num);
+void send_frame(int fd, pid_t id, 
+		struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num);
 uint16_t compute_checksum(struct frame *frame);
 void print_layer_stack_statistics(struct layer_stack *stack);
 
-// Create space for all of the info we need to send to each thread in each stack
-struct layer_stack stack_info[MAX_CLIENTS];
-struct layer_info net_send_info, net_recv_info; // FDs for each end of the pipe for each layer
-struct layer_info phys_send_info, phys_recv_info;
-struct bidirectional_layer_info dl_info;
-
-//pthread_mutex_t net_dl_wire_lock;
-//pthread_mutex_t phys_dl_wire_lock;
-//uint32_t net_to_dl_frame_size = 0;
-//uint32_t phys_to_dl_frame_size = 0;
-
-int total_frames_sent = 0;
-int total_acks_sent = 0;
 
 // Define a timeval for the maximum timeout
 struct timeval max_wait_time;
 
-struct layer_stack *create_layer_stack(int clnt_sock, int *app_layer_pipes)
+struct layer_stack *create_layer_stack(int clnt_sock, pid_t id, int *app_layer_pipes)
 {
   struct stack_create_info *info = (struct stack_create_info *)malloc(sizeof(struct stack_create_info));
   struct layer_stack *s_info = (struct layer_stack *)malloc(sizeof(struct layer_stack));
   pthread_t th;
 
+  // Populate the struct we're sending to the stack creation thread
   info->clnt_sock = clnt_sock;
   info->app_layer_pipes = app_layer_pipes;
   info->stack = s_info;
-
+  info->id = id;
+  
   // Create the thread, which creates the layer threads
   pthread_create(&th, NULL, init_layer_stack, (void*)info);
 
@@ -98,15 +88,22 @@ void *init_layer_stack(void *info)
 
   int num_pipes = 6;
   int *pipes[6] = {app_to_net, net_to_app, 
-		net_to_dl, dl_to_net, 
-		dl_to_phys, phys_to_dl};
+		   net_to_dl, dl_to_net, 
+		   dl_to_phys, phys_to_dl};
+
+  // Fill in the client's ID
+  s_info->id = in->id;
+  
+  dprintf(DID_INFO, "Initializing layer stack for client %d\n", s_info->id);
 
   // Make our pipes
   for(i = 0; i < num_pipes; i++)
     if(pipe(pipes[i]))
-      printf("Error creating pipe:  %s\n", strerror(errno));
+      {
+	dprintf(DID_WARN, "%d:  Error creating pipe:  %s\n", s_info->id, strerror(errno));
+      }
     else
-      printf("Created pipe:  %d -> %d\n", pipes[i][0], pipes[i][1]);
+      dprintf(DID_INFO, "%d:  Created pipe:  %d -> %d\n", s_info->id, pipes[i][0], pipes[i][1]);
   
   pipe_read(in->app_layer_pipes) = pipe_read(net_to_app);
   pipe_write(in->app_layer_pipes) = pipe_write(app_to_net);
@@ -159,11 +156,12 @@ void *init_layer_stack(void *info)
   s_info->total_good_acks_recvd = 0;
   s_info->total_bad_acks_recvd = 0;
   s_info->total_dup_frames_recvd = 0;
+  s_info->total_bad_frames_recvd = 0;
 
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  printf("Creating layer threads...\n");
+  dprintf(DID_INFO, "%d:  Creating layer threads...\n", s_info->id);
   if((rv = pthread_create(&t_net_send, NULL, init_network_layer_send, 
 			  (void*)&(s_info->net_send_info))))
     printf("Error creating thread!\n");
@@ -187,26 +185,10 @@ void *init_layer_stack(void *info)
   // Just wait for the thread holding the socket.  When the app layer closes it, we're done.  
   pthread_join(t_phys_recv, NULL);
 
-  printf("Successfully terminated!\n");
-  close(in->clnt_sock); // Close the socket so the client handler dies
-  close(pipe_read(in->app_layer_pipes));
-  close(pipe_write(in->app_layer_pipes));
-
-  // Close all of the pipes
-  close((s_info->net_send_info).in);
-  close((s_info->net_send_info).out);
-  close((s_info->net_recv_info).in);
-  close((s_info->net_recv_info).out);
-
-  close((s_info->dl_info).top_in);
-  close((s_info->dl_info).top_out);
-  close((s_info->dl_info).bottom_in);
-  close((s_info->dl_info).bottom_out);
-  
-  close((s_info->phys_send_info).in);
-  close((s_info->phys_recv_info).out);
-
   print_layer_stack_statistics(s_info);
+
+  printf("Client %d Successfully terminated!\n", s_info->id);  
+
 
   pthread_exit(NULL);
 }
@@ -222,7 +204,7 @@ void *init_physical_layer_send(void *info)
   struct frame frame_out;
   struct ack ack_out;
   // Grab something to process
-  printf("PHY:  Thread created!\n");
+  printf("%d:  PHY:  Thread created!\n", (fds->stack)->id);
 
   for(;;)
     {
@@ -232,30 +214,33 @@ void *init_physical_layer_send(void *info)
       // Get something to send, block if nothing.  
       if((bytes_read = read(fds->in, &frame_out, sizeof(struct frame))) <= 0)
 	{
-	  printf("PHY:  Read %d bytes from APP.  Pipe was probably closed.  Terminating!\n", bytes_read);
+	  printf("%d:  PHY:  Read %d bytes from APP.  Pipe was probably closed.  Terminating!\n", 
+		 (fds->stack)->id, bytes_read);
 	  break;
 	}
 
       if(frame_out.type == FRAME_TYPE_FRAME) 
 	{
-	  if(!(++((fds->stack)->total_frames_sent) % FRAME_KILL_EVERY_N_FRAMES))
+	  if(!((++((fds->stack)->total_frames_sent)) % FRAME_KILL_EVERY_N_FRAMES))
 	    {
-	      dprintf(DID_DLL_INFO, "PHY:  Injecting error in frame %d\n", frame_out.seq);
+	      dprintf(DID_DLL_INFO, "%d:  PHY:  Injecting error in frame %d, %d sent\n", 
+		      (fds->stack)->id, frame_out.seq, (fds->stack)->total_frames_sent);
 	      frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	    }
 	  else
 	    (fds->stack)->total_good_frames_sent++;
-
+	  
 	  // We're sending a whole frame, so just set the buffer accordingly
 	  buffer_to_send = (char *)&frame_out;
 	  len_to_send = sizeof(struct frame);
 	}
-
+      
       if(frame_out.type == FRAME_TYPE_ACK)
 	{
 	  if(!(++((fds->stack)->total_acks_sent) % FRAME_KILL_EVERY_N_ACKS))
 	    {
-	      dprintf(DID_DLL_INFO, "PHY:  Injecting error in ACK %d\n", frame_out.seq);
+	      dprintf(DID_DLL_INFO, "%d:  PHY:  Injecting error in ACK %d\n", 
+		      (fds->stack)->id, frame_out.seq);
 	      frame_out.checksum ^= FRAME_KILL_MAGIC; // Flip a single bit of the checksum
 	    }
 	  else
@@ -270,17 +255,19 @@ void *init_physical_layer_send(void *info)
 	  len_to_send = sizeof(struct ack);
 	}
 
-      dprintf(DID_INFO, "PHY:  Sending %s of %d bytes\n", get_frame_type(frame_out), len_to_send);
+      dprintf(DID_INFO, "%d:  PHY:  Sending %s of %d bytes\n", 
+	      (fds->stack)->id, get_frame_type(frame_out), len_to_send);
 
       // Send it down to the next pipe, don't block
       if((bytes_sent = send(fds->out, buffer_to_send, len_to_send, 0)) <= 0)
 	{
-	  printf("PHY:  Sent %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
-		 bytes_read, strerror(errno));
+	  printf("%d:  PHY:  Sent %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
+		 (fds->stack)->id, bytes_read, strerror(errno));
 	  break;
 	}
     }
   
+  dprintf(DID_INFO, "%d:  PHY:  Send thread entered termination handler!\n", (fds->stack)->id);
   close(fds->in);
   close(fds->out);
   pthread_exit(NULL);
@@ -297,7 +284,7 @@ void *init_network_layer_send(void *info)
 
   char *pkt = (char *)&pkt_in;
 
-  printf("NET:  Thread created!\n");
+  dprintf(DID_INFO, "%d:  NET:  Thread created!\n", (fds->stack)->id);
   
   for(;;)
     {
@@ -308,31 +295,31 @@ void *init_network_layer_send(void *info)
       // Grab something to process
       if((bytes_read = read(fds->in, &pkt_in, sizeof(struct packet))) <= 0)
 	break;
-      dprintf(DID_INFO, "NET:  Read packet of %d bytes with payload of %d bytes\n", 
-	     bytes_read, pkt_in.length + 1);
+      dprintf(DID_INFO, "%d:  NET:  Read packet of %d bytes with payload of %d bytes\n", 
+	     (fds->stack)->id, bytes_read, pkt_in.length + 1);
 
       total_pkt_len = pkt_in.length + 1 + 
 	sizeof(pkt_in.seq_num) + sizeof(pkt_in.opcode) + sizeof(pkt_in.length);
 
       if(pkt_in.length + 1 <= FRAME_PAYLOAD_SIZE)
 	{
-	  dprintf(DID_INFO, "NET:  Constructed segment 1 of length %d byteswith payload of %d bytes.\n", 
-		 total_pkt_len, pkt_in.length);
+	  dprintf(DID_INFO, "%d:  NET:  Constructed segment 1 of length %d bytes with payload of %d bytes.\n", 
+		 (fds->stack)->id, total_pkt_len, pkt_in.length);
 	  memcpy(s1.payload, &pkt_in, total_pkt_len);
 	  s1.length = total_pkt_len;
 	  s1.end_of_pkt = FRAME_IS_EOP;
 	}
       else // We need >1 frame
 	{
-	  dprintf(DID_INFO, "NET:  Constructed segment 1 with payload of %d bytes.\n", 
-		 FRAME_PAYLOAD_SIZE);
+	  dprintf(DID_INFO, "%d:  NET:  Constructed segment 1 with payload of %d bytes.\n", 
+		 (fds->stack)->id, FRAME_PAYLOAD_SIZE);
 
 	  memcpy(s1.payload, &pkt_in, FRAME_PAYLOAD_SIZE);
 	  s1.length = FRAME_PAYLOAD_SIZE;
 	  s1.end_of_pkt = FRAME_NOT_EOP;
 	  	  
-	  dprintf(DID_INFO, "NET:  Constructed segment 2 with payload of %d bytes.\n", 
-		 total_pkt_len - FRAME_PAYLOAD_SIZE);
+	  dprintf(DID_INFO, "%d:  NET:  Constructed segment 2 with payload of %d bytes.\n", 
+		 (fds->stack)->id, total_pkt_len - FRAME_PAYLOAD_SIZE);
 
 	  memcpy(s2.payload, (pkt + FRAME_PAYLOAD_SIZE), 
 			      (total_pkt_len - FRAME_PAYLOAD_SIZE));
@@ -346,7 +333,8 @@ void *init_network_layer_send(void *info)
       
       bytes_written = write(fds->out, &s1, sizeof(struct packet_segment));
       (fds->stack)->net_to_dl_frame_size += bytes_written;
-      dprintf(DID_INFO, "NET:  Sent first segment of %d bytes\n", bytes_written);
+      dprintf(DID_INFO, "%d:  NET:  Sent first segment of %d bytes\n", 
+	      (fds->stack)->id, bytes_written);
 
       if(pkt_in.length > FRAME_PAYLOAD_SIZE) // Send the second frame, if necessary
 	{
@@ -358,7 +346,8 @@ void *init_network_layer_send(void *info)
 	  else
 	    {
 	      (fds->stack)->net_to_dl_frame_size += bytes_written;
-	      dprintf(DID_INFO, "NET:  Sent second segment of %d bytes\n", bytes_written);
+	      dprintf(DID_INFO, "%d:  NET:  Sent second segment of %d bytes\n", 
+		      (fds->stack)->id, bytes_written);
 	    }
 	}
 
@@ -368,7 +357,8 @@ void *init_network_layer_send(void *info)
 	break;
     }
   
-  dprintf(DID_INFO, "NET:  Send thread entered termination handler!\n");
+  dprintf(DID_INFO, "%d:  NET:  Send thread entered termination handler!\n", 
+	  (fds->stack)->id);
 
   pthread_mutex_lock(&((fds->stack)->net_dl_wire_lock));
   (fds->stack)->net_to_dl_frame_size = -1;
@@ -390,7 +380,7 @@ void *init_network_layer_recv(void *info)
   // Since the payload is at most 256 bytes, it will comprise at most two frames
   struct frame f1, f2;
 
-  printf("NET:  Thread created!\n");
+  dprintf(DID_INFO, "%d:  NET:  Thread created!\n", (fds->stack)->id);
   
   for(;;)
     {
@@ -401,13 +391,14 @@ void *init_network_layer_recv(void *info)
       // Grab a segment to process
       if((bytes_read = read(fds->in, &f1, sizeof(struct frame))) <= 0)
 	break;
-      dprintf(DID_INFO, "NET:  Received frame of %d bytes with payload of %d bytes\n", bytes_read, f1.length);
+      dprintf(DID_INFO, "%d:  NET:  Received frame of %d bytes with payload of %d bytes\n", 
+	      (fds->stack)->id, bytes_read, f1.length);
 
       if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
 	  bytes_read = read(fds->in, &f2, sizeof(struct frame));
-	  dprintf(DID_INFO, "NET:  Received second frame of %d bytes with payload of %d bytes\n", 
-		 bytes_read, f2.length);
+	  dprintf(DID_INFO, "%d:  NET:  Received second frame of %d bytes with payload of %d bytes\n", 
+		 (fds->stack)->id, bytes_read, f2.length);
 	}
       
       // Copy the segments into our packet
@@ -415,8 +406,8 @@ void *init_network_layer_recv(void *info)
 
       if(f1.end_of_pkt == FRAME_NOT_EOP)
 	{
-	  dprintf(DID_INFO, "NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
-		 f2.length, f1.length);
+	  dprintf(DID_INFO, "%d:  NET:  Appending second frame of length %d bytes to packet after %d bytes\n", 
+		 (fds->stack)->id, f2.length, f1.length);
 	  memcpy(pkt + f1.length, &(f2.payload), f2.length);
 	}
 
@@ -425,7 +416,7 @@ void *init_network_layer_recv(void *info)
 	break;
     }
 
-  dprintf(DID_INFO, "NET:  Recv thread entered termination handler!\n");
+  dprintf(DID_INFO, "%d:  NET:  Recv thread entered termination handler!\n", (fds->stack)->id);
   close(fds->in);
   close(fds->out);
   pthread_exit(NULL);
@@ -454,8 +445,8 @@ void *init_data_link_layer(void *info)
   uint16_t last_recvd_frames[MAX_SEQ + 1]; 
 
   memset(packet_buffer, 0, (MAX_SEQ + 1)*sizeof(struct frame_window));
-  printf("DLL:  Packet size:  %ld, Frame size:  %ld, Payload size:  %d\n", 
-	 sizeof(struct packet), sizeof(struct frame), FRAME_PAYLOAD_SIZE);
+  dprintf(DID_INFO, "%d:  DLL:  Packet size:  %ld, Frame size:  %ld, Payload size:  %d\n", 
+	 (fds->stack)->id, sizeof(struct packet), sizeof(struct frame), FRAME_PAYLOAD_SIZE);
 
   for(;;)
     {
@@ -469,7 +460,7 @@ void *init_data_link_layer(void *info)
       switch(event)
 	{
 	case PIPE_ERROR:
-	  dprintf(DID_INFO, "DLL:  Entered termination handler!\n");
+	  dprintf(DID_INFO, "%d:  DLL:  Entered termination handler!\n", (fds->stack)->id);
 	  close(fds->top_in);
 	  close(fds->top_out);
 	  close(fds->bottom_in);
@@ -477,8 +468,8 @@ void *init_data_link_layer(void *info)
 	  pthread_exit(NULL);
 	  break;
 	case NETWORK_FRAME_READY: // We just received a frame, 
-	  dprintf(DID_DLL_INFO, "DLL:  Got a frame %d from NET of %d bytes with %d currently buffered.\n", 
-		 next_frame_to_send, bytes_read, frames_buffered);
+	  dprintf(DID_DLL_INFO, "%d:  DLL:  Got a frame %d from NET of %d bytes with %d currently buffered.\n", 
+		 (fds->stack)->id, next_frame_to_send, bytes_read, frames_buffered);
 	  
 	  recvd_segment = (struct packet_segment *)read_buffer;
 
@@ -490,22 +481,24 @@ void *init_data_link_layer(void *info)
 	  frames_buffered++;
 
 	  // Send it down to the physical layer
-	  send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
+	  send_frame(fds->bottom_out, (fds->stack)->id, 
+		     packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
 	  next_frame_to_send++;
 
 	  break;
 
 	case PHYSICAL_FRAME_READY: // Frame is going up to the network layer
 	  recvd_frame = (struct frame *)read_buffer; // We just received a frame
-	  dprintf(DID_DLL_INFO, "DLL:  Got a frame from PHY of %d bytes with payload of %d bytes\n", 
-		 bytes_read, recvd_frame->length);
+	  dprintf(DID_DLL_INFO, "%d:  DLL:  Got a frame from PHY of %d bytes with payload of %d bytes\n", 
+		 (fds->stack)->id, bytes_read, recvd_frame->length);
 
 	  // If the frame we just received was what we wanted
 	  if(recvd_frame->type == FRAME_TYPE_FRAME)
 	    {
 	      if(recvd_frame->seq == frame_expected)
 		{
-		  dprintf(DID_DLL_INFO, "DLL:  Frame %d was expected frame %d\n", recvd_frame->seq, frame_expected);
+		  dprintf(DID_DLL_INFO, "%d:  DLL:  Frame %d was expected frame %d\n", 
+			  (fds->stack)->id, recvd_frame->seq, frame_expected);
 
 		  // Record its checksum so we can check for duplicates
 		  last_recvd_frames[frame_expected] = recvd_frame->checksum;
@@ -515,7 +508,8 @@ void *init_data_link_layer(void *info)
 
 
 		  // Send an ACK for that frame
-		  send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, frame_expected);
+		  send_frame(fds->bottom_out, (fds->stack)->id, 
+			     packet_buffer, FRAME_TYPE_ACK, frame_expected);
 		  
 		  // Send the packet over to the network layer
 		  write(fds->top_out, recvd_frame, sizeof(struct frame));
@@ -523,16 +517,18 @@ void *init_data_link_layer(void *info)
 		}
 	      else // We may have received a duplicate frame
 		{
-		  dprintf(DID_DLL_INFO, "DLL:  Received unexpected frame %d, was expecting %d\n", 
-			 recvd_frame->seq, frame_expected);
+		  dprintf(DID_DLL_INFO, "%d:  DLL:  Received unexpected frame %d, was expecting %d\n", 
+			 (fds->stack)->id, recvd_frame->seq, frame_expected);
 
 		  // If we find it in our buffer of last few checksums, it's a duplicate, so ACK it again
 		  for(i = 0; i < MAX_SEQ + 1; i++)
 		    if(recvd_frame->checksum == last_recvd_frames[i])
 		      {
 			(fds->stack)->total_dup_frames_recvd++;
-			dprintf(DID_DLL_INFO, "DLL:  Sending duplicate ACK for frame %d\n", recvd_frame->seq);
-			send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_ACK, recvd_frame->seq);
+			dprintf(DID_DLL_INFO, "%d:  DLL:  Sending duplicate ACK for frame %d\n", 
+				(fds->stack)->id, recvd_frame->seq);
+			send_frame(fds->bottom_out, (fds->stack)->id, 
+				   packet_buffer, FRAME_TYPE_ACK, recvd_frame->seq);
 		      }
 		}
 	    }
@@ -546,19 +542,19 @@ void *init_data_link_layer(void *info)
 
 	      (fds->stack)->total_good_acks_recvd++;
 
-	      dprintf(DID_DLL_INFO, "DLL:  Received ACK for frame %d, now %d frames in buffer\n", 
-		     recvd_frame->seq, frames_buffered);
+	      dprintf(DID_DLL_INFO, "%d:  DLL:  Received ACK for frame %d, now %d frames in buffer\n", 
+		     (fds->stack)->id, recvd_frame->seq, frames_buffered);
 
 	    }
 	  else // If not, drop the frame	  
-	    dprintf(DID_DLL_INFO, "DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
-		   recvd_frame->type, recvd_frame->seq, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
+	    dprintf(DID_DLL_INFO, "%d:  DLL:  Dropped %X frame %d, expected seq %d, ACK %d, %d frames in buffer, next is %d\n",
+		   (fds->stack)->id, recvd_frame->type, recvd_frame->seq, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
 	  break;
 
 	case CHECKSUM_ERROR:
 	  recvd_frame = (struct frame *)read_buffer; // We just received a frame, albeit a bad one
-	  dprintf(DID_DLL_INFO, "DLL:  Got checksum error for %d, expecting seq %d, ACK %d, %d buffered, next %d, dropping frame.\n", 
-		 recvd_frame->type, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
+	  dprintf(DID_DLL_INFO, "%d:  DLL:  Got checksum error for %d, expecting seq %d, ACK %d, %d buffered, next %d, dropping frame.\n", 
+		 (fds->stack)->id, recvd_frame->type, frame_expected, ack_expected, frames_buffered, next_frame_to_send);
 	  
 	  // Update our counters
 	  if(recvd_frame->type == FRAME_TYPE_FRAME)
@@ -568,17 +564,18 @@ void *init_data_link_layer(void *info)
 	  break;
 	  
 	case TIME_OUT: // We lost one
-	  dprintf(DID_DLL_INFO, "DLL:  Caught timeout for frame %d\n", ack_expected);
+	  dprintf(DID_DLL_INFO, "%d:  DLL:  Caught timeout for frame %d\n", (fds->stack)->id, ack_expected);
 	  next_frame_to_send = ack_expected; // Start retransmitting from there
 	  for(i = 1; i <= frames_buffered; i++)
 	    {
 	      // Resend the frame
-	      send_frame(fds->bottom_out, packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
+	      send_frame(fds->bottom_out, (fds->stack)->id, 
+			 packet_buffer, FRAME_TYPE_FRAME, next_frame_to_send);
 	      next_frame_to_send++;
 	    }
 	  break;
 	default:
-	  dprintf(DID_WARN, "DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", frame_expected, frames_buffered, next_frame_to_send, ack_expected);
+	  dprintf(DID_WARN, "%d:  DLL:  I don't know what's going on here!  Expected %d, %d in buffer, next is %d, waiting for ack %d\n", (fds->stack)->id, frame_expected, frames_buffered, next_frame_to_send, ack_expected);
 
 	}
     }
@@ -600,7 +597,7 @@ void *init_physical_layer_recv(void *info)
   struct frame frame_in;
   struct ack ack_in;
 
-  printf("PHY:  Thread created!\n");
+  dprintf(DID_INFO, "%d:  PHY:  Thread created!\n", (fds->stack)->id);
 
   for(;;)
     {
@@ -613,8 +610,8 @@ void *init_physical_layer_recv(void *info)
       // Based on this, we know how much to read next
       if((bytes_read = recv(fds->in, &type_recvd, sizeof(uint8_t), MSG_PEEK)) <= 0)
 	{
-	  dprintf(DID_INFO, "PHY:  Read %d bytes:  %s.  Terminating!\n", 
-		  bytes_read, strerror(errno));
+	  dprintf(DID_INFO, "%d:  PHY:  Read %d bytes:  %s.  Terminating!\n", 
+		  (fds->stack)->id, bytes_read, strerror(errno));
 	  break;
 	}
 
@@ -630,13 +627,13 @@ void *init_physical_layer_recv(void *info)
 	  bytes_to_read = sizeof(struct ack);
 	}
       else
-	dprintf(DID_INFO, "PHY:  NO IDEA what I just recvd.\n");
+	dprintf(DID_INFO, "%d:  PHY:  NO IDEA what I just recvd.\n", (fds->stack)->id);
 
       // ... and then try to read it from the socket.  
       if((bytes_read = recv(fds->in, recv_buffer, bytes_to_read, 0)) <= 0) 
 	{
-	  dprintf(DID_INFO, "PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
-		  bytes_read, strerror(errno));
+	  dprintf(DID_INFO, "%d:  PHY:  Read %d bytes: %s.  Socket was probably closed.  Terminating!\n", 
+		  (fds->stack)->id, bytes_read, strerror(errno));
 	  break;
 	}
      
@@ -645,20 +642,21 @@ void *init_physical_layer_recv(void *info)
       // struct to keep the pipes happy
       if(type_recvd == FRAME_TYPE_FRAME)
 	{
-	  dprintf(DID_INFO, "PHY:  Received frame of %d bytes with payload of %d bytes\n", 
-	       bytes_read, frame_in.length);
+	  dprintf(DID_INFO, "%d:  PHY:  Received frame of %d bytes with payload of %d bytes\n", 
+	       (fds->stack)->id, bytes_read, frame_in.length);
 
 	  memcpy(&frame_in, recv_buffer, sizeof(struct frame));
 	}
       else if(type_recvd == FRAME_TYPE_ACK)
 	{
-	  dprintf(DID_INFO, "PHY:  Received ACK %d of %d bytes\n", ack_in.seq, bytes_read);
+	  dprintf(DID_INFO, "%d:  PHY:  Received ACK %d of %d bytes\n", 
+		  (fds->stack)->id, ack_in.seq, bytes_read);
 	  frame_in.type = ack_in.type;
 	  frame_in.seq = ack_in.seq;
 	  frame_in.checksum = ack_in.checksum;
 	}
       else
-	dprintf(DID_INFO, "PHY:  NO IDEA what I just received.\n");
+	dprintf(DID_INFO, "%d:  PHY:  NO IDEA what I just received.\n", (fds->stack)->id);
       
       // Send it down to the next pipe
       pthread_mutex_lock(&((fds->stack)->phys_dl_wire_lock));
@@ -676,7 +674,7 @@ void *init_physical_layer_recv(void *info)
 	break;
     }
 
-  dprintf(DID_INFO, "PHY:  Entered termination handler!\n");
+  dprintf(DID_INFO, "%d:  PHY:  Recv thread entered termination handler!\n", (fds->stack)->id);
 
   pthread_mutex_lock(&((fds->stack)->phys_dl_wire_lock));
   (fds->stack)->phys_to_dl_frame_size = -1;
@@ -700,16 +698,19 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
 
   // Try to read from our input pipe, but don't block if nothing's there
   pthread_mutex_lock(&(stack->net_dl_wire_lock));
-  if(stack->net_to_dl_frame_size == -1)
+
+  if(stack->net_to_dl_frame_size == -1) // Check if the network layer has flagged that we should terminate
     rv = PIPE_ERROR;
-  else if(stack->net_to_dl_frame_size && frames_buffered < (SLIDING_WINDOW_SIZE + 1))
+  else if(stack->net_to_dl_frame_size && frames_buffered < SLIDING_WINDOW_SIZE)
     {
+      dprintf(DID_DLL_INFO, "%d:  DLL_EVENT:  NET has %d bytes for us\n", 
+	      stack->id, stack->net_to_dl_frame_size);
       if((bytes_read = read(net_fd, buffer, sizeof(struct packet_segment))) <= 0)
 	rv = PIPE_ERROR;
       else
 	{
-	  dprintf(DID_DLL_INFO, "EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
-		  bytes_read, frames_buffered);
+	  dprintf(DID_DLL_INFO, "%d:  DLL_EVENT:  Got into NET, read %d bytes with %d buffered.\n", 
+		  stack->id, bytes_read, frames_buffered);
 	  stack->net_to_dl_frame_size -= bytes_read;
 	  rv = NETWORK_FRAME_READY;
 	}
@@ -728,7 +729,8 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
 	    rv = PIPE_ERROR;
 	    else
 	      {
-		dprintf(DID_DLL_INFO, "EVENT:  Got into PHYS, read %d bytes.\n", bytes_read);
+		dprintf(DID_DLL_INFO, "%d:  DLL_EVENT:  Got into PHYS, read %d bytes.\n", 
+			stack->id, bytes_read);
 		stack->phys_to_dl_frame_size -= bytes_read;
 		rv = PHYSICAL_FRAME_READY;
 	      }
@@ -741,7 +743,8 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
 	  // If it's an ACK, the "checksum" is the sequence number
 	  checksum = (recvd_frame->type == FRAME_TYPE_FRAME) ? 
 	    compute_checksum(recvd_frame) : recvd_frame->seq;
-	  dprintf(DID_DLL_INFO, "EVENT:  Got checksum:  %04X vs %04X\n", checksum, recvd_frame->checksum);
+	  dprintf(DID_DLL_INFO, "%d:  DLL_EVENT:  Got checksum:  %04X vs %04X\n", 
+		  stack->id, checksum, recvd_frame->checksum);
 	  if(checksum != recvd_frame->checksum)
 	    rv = CHECKSUM_ERROR;
 	}
@@ -756,8 +759,8 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
 	  timersub(&curr_time, &(window[expected].time_sent), &diff_time);
 	  if(timercmp(&diff_time, &max_wait_time, >))
 	    {
-	      dprintf(DID_DLL_INFO, "EVENT:  Found TIMEOUT for frame %d with %d buffered.\n", 
-		     expected, frames_buffered);
+	      dprintf(DID_DLL_INFO, "%d:  DLL_EVENT:  Found TIMEOUT for frame %d with %d buffered.\n", 
+		     stack->id, expected, frames_buffered);
 	      timerclear(&(window[expected].time_sent));
 	      rv = TIME_OUT;
 	    }
@@ -770,7 +773,8 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
   return rv;
 }
 
- void send_frame(int fd, struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num)
+void send_frame(int fd, pid_t id, 
+		struct frame_window *pkt_buffer, uint8_t frame_type, uint8_t seq_num)
 {
   struct frame out;
   
@@ -794,8 +798,8 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
   else
     out.checksum = seq_num; // ACK checksum is just the sequence number again
 
-  dprintf(DID_DLL_INFO, "DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
-	 get_frame_type(out), out.seq, sizeof(struct frame), out.length);
+  dprintf(DID_DLL_INFO, "%d:  DLL:  Sending %s with seq %d of length %ld bytes with payload of %d bytes\n", 
+	 id, get_frame_type(out), out.seq, sizeof(struct frame), out.length);
 
   // Start the timer by recording when we sent this frame (if it's an actual frame)
   if(frame_type == FRAME_TYPE_FRAME)
@@ -804,7 +808,7 @@ enum frame_event wait_for_event(struct layer_stack *stack, int net_fd, int phys_
   // Send it to the physical layer
   if(write(fd, &out, sizeof(struct frame)) <= 0)
     {
-      dprintf(DID_DLL_INFO, "DLL:  send_frame terminating!\n");
+      dprintf(DID_DLL_INFO, "%d:  DLL:  send_frame terminating!\n", id);
       pthread_exit(NULL);
     }
 }
@@ -843,7 +847,7 @@ uint16_t compute_checksum(struct frame *frame)
 
 void print_layer_stack_statistics(struct layer_stack *stack)
 {
-  printf("\n\n---- Statistics for Layer Stack Transmission ----\n");
+  printf("\n\n---- Statistics for Layer Stack Transmission for %d----\n", stack->id);
   printf("Total Frames Sent:  %d\n", stack->total_frames_sent);
   printf("Total ACKs Sent:  %d\n", stack->total_acks_sent);
   printf("Total Fames Sent Successfully:  %d\n", stack->total_good_frames_sent);
