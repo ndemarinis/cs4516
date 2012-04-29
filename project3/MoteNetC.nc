@@ -323,8 +323,6 @@ implementation
     LocalMsg_t *payload = 
       (LocalMsg_t *)(call LocalPacket.getPayload(&localMsg, sizeof(LocalMsg_t)));
 
-    local_send_ready = FALSE;
-
     while(curr_channel != CHANNEL_LOCAL);
 
     if(payload && radio_enabled && !local_sending)
