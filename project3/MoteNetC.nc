@@ -13,6 +13,7 @@ module MoteNetC
 
   uses interface Timer<TMilli> as TransmitTimer;
   uses interface Timer<TMilli> as ChannelSelectTimer;
+  uses interface Timer<TMilli> as BeaconInRangeTimer;
 
   uses interface SplitControl as AMControl;
 
@@ -49,6 +50,9 @@ implementation
 
   // Our current channel, initialize to channel in Makefile
   uint8_t curr_channel = CHANNEL_BROADCAST; 
+
+  // Whether we're the near or far mode
+  uint8_t mote_state = MOTE_NEAR; // Start off as the near
 
   // Prototypes
   void sendBroadcast();
@@ -105,6 +109,11 @@ implementation
     call RadioConfig.sync(); // Send our changes to the radio
   }
 
+  event void BeaconInRangeTimer.fired()
+  {
+    call Leds.led2Off(); // Shut off the blue LED saying we're no longer in range of the beacon
+  }
+
 
   /************* RADIO CONTROL EVENT HANDLERS **************************/  
 
@@ -147,13 +156,34 @@ implementation
   // When we receive a Broadcast message
   event message_t *BroadcastReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
-    call Leds.led2On(); // Just blink an LED for now.  
+    TargetMsg_t *t_msg;
+    BeaconMsg_t *b_msg;
 
-    // Start the CS timer after we get the first beacon, this should keep us sync'd
-    if(wait_until_beacon) 
+    if((*((uint8_t *)payload)) == TARGET_MSG_TYPE)
       {
-	call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
-	wait_until_beacon = FALSE;
+	t_msg = (TargetMsg_t *)payload;
+	call Leds.led2On(); // Just blink an LED for now.  
+      }
+    else
+      {
+	b_msg = (BeaconMsg_t *)payload;
+
+	// As specified, turn on the blue LED.  
+	//call Leds.led2On();
+
+	// (Re)set a timer to turn off the blue LED if we don't hear from the beacon after 5s.  
+	call BeaconInRangeTimer.startOneShot(BEACON_RANGE_PERIOD_MS);
+	
+	// If this was a request and we're the near node, send a response
+	if(mote_state == MOTE_NEAR && b_msg->subnet_id == SUBNET_ID) 
+	  sendBroadcast();
+
+	// Start the CS timer after we get the first beacon, this should keep us sync'd
+	if(wait_until_beacon) 
+	  {
+	    call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
+	    wait_until_beacon = FALSE;
+	  }
       }
 
     return msg;
@@ -183,13 +213,17 @@ implementation
   // Send a message over the broadcast channel
   void sendBroadcast()
   {
-    theft_t *payload = 
-      (theft_t *)(call BroadcastPacket.getPayload(&broadcastMsg, sizeof(theft_t)));
-    
-    if(payload && !broadcast_sending)
+    ReportMsg_t *payload = 
+      (ReportMsg_t *)(call BroadcastPacket.getPayload(&broadcastMsg, sizeof(ReportMsg_t)));
+
+    // Send only if we're not already sending and the radio is enabled
+    if(payload && radio_enabled && !broadcast_sending)
       {
 	// Populate the struct here
-	payload -> who = TOS_NODE_ID;
+	payload->msg_type = REPORT_MSG_TYPE;
+	payload->node_id = TOS_NODE_ID;
+	payload->subnet_id = SUBNET_ID;
+	payload->report_time = 0; // As specified, we don't care about this.
 	
 	// Send the message
 	if(call BroadcastAMSend.send(AM_BROADCAST_ADDR, &broadcastMsg, sizeof(theft_t)) 
@@ -204,7 +238,7 @@ implementation
     theft_t *payload = 
       (theft_t *)(call LocalPacket.getPayload(&localMsg, sizeof(theft_t)));
     
-    if(payload && !local_sending)
+    if(payload && radio_enabled && !local_sending)
       {
 	// Populate the struct here
 	payload -> who = TOS_NODE_ID;

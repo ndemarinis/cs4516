@@ -13,23 +13,23 @@ typedef nx_struct theft
   nx_uint8_t state;
 } theft_t;
 
-typedef struct {
+typedef struct BeaconMsg {
   nx_uint8_t msg_type;
   nx_uint64_t base_clock;
   nx_uint8_t subnet_id;  // 0 if no request, >0 specifies a request to a subnet ID
-} BeaconMsg;
+} BeaconMsg_t;
 
 
-typedef struct {
+typedef struct TargetMsg {
   nx_uint8_t msg_type;
-} TargetMsg;
+} TargetMsg_t;
 
-typedef struct {
+typedef struct ReportMsg {
   nx_uint8_t msg_type;
   nx_uint8_t node_id;
   nx_uint8_t subnet_id;
   nx_uint64_t report_time;
-} ReportMsg;
+} ReportMsg_t;
 
 
 enum 
@@ -37,6 +37,8 @@ enum
     // Need to define which mote are to define our actions
     MOTE_RED = 0,
     MOTE_GREEN = 1,
+
+    SUBNET_ID = 5,
 
     BEACON_PERIOD_MS = 1000,
     TARGET_PERIOD_MS = 500,
@@ -49,6 +51,7 @@ enum
     // Timer periods
     TX_PERIOD_MS = 1000,
     CS_PERIOD_MS = (2*BEACON_PERIOD_MS),
+    BEACON_RANGE_PERIOD_MS = (5*BEACON_PERIOD_MS),
 
     // Define near/far mote
     MOTE_NEAR = 0,

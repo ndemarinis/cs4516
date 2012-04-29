@@ -18,6 +18,7 @@ implementation
   // Timers for periodically transmitting messages and channel switching
   components new TimerMilliC() as TxTimer;
   components new TimerMilliC() as CSTimer;
+  components new TimerMilliC() as BTimer;
 
   // Message control
   components ActiveMessageC;
@@ -37,8 +38,9 @@ implementation
   MoteNetC.Leds -> LedsC;
 
   // Connect the timers
-  MoteNetC.TransmitTimer -> TxTimer;
+  MoteNetC.TransmitTimer      -> TxTimer;
   MoteNetC.ChannelSelectTimer -> CSTimer;
+  MoteNetC.BeaconInRangeTimer -> BTimer;
 
   // Connect the radio components
   MoteNetC.RadioConfig -> CC2420ControlC;
