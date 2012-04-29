@@ -32,6 +32,13 @@ typedef struct ReportMsg {
 } ReportMsg_t;
 
 
+typedef nx_struct localMsg
+{
+  nx_uint8_t who;
+  nx_uint8_t state;
+  nx_int8_t rssi;
+} LocalMsg_t;
+
 enum 
   {
     // Need to define which mote are to define our actions
@@ -50,6 +57,7 @@ enum
 
     // Timer periods
     TX_PERIOD_MS = 1000,
+    TRANSMIT_PERIOD_MS = 250,
     CS_PERIOD_MS = (2*BEACON_PERIOD_MS),
     BEACON_RANGE_PERIOD_MS = (5*BEACON_PERIOD_MS),
 

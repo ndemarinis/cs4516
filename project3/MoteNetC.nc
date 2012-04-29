@@ -45,6 +45,9 @@ implementation
   // Flags to enable/disable local and broadcast sends
   bool broadcast_sending = FALSE, local_sending = FALSE; 
 
+  // Flags for whether we're waiting to send a message when we switch channels
+  bool broadcast_send_ready = FALSE, local_send_ready = FALSE;
+
   bool radio_enabled = TRUE; // Flag for disabling the entire radio when we're syncing
   bool wait_until_beacon = TRUE; // Don't switch until we get a beacon message
 
@@ -54,8 +57,11 @@ implementation
   // Whether we're the near or far mode
   uint8_t mote_state = MOTE_NEAR; // Start off as the near
 
+  // RSSI of the last target packet we received
+  int8_t last_target_RSSI;
+
   // Prototypes
-  void sendBroadcast();
+  void sendBroadcast(uint8_t type);
   void sendLocal();
 
   event void Boot.booted()
@@ -70,23 +76,23 @@ implementation
   // We probably only need to periodically transmit on the local network in the real mode
   event void TransmitTimer.fired()
   {
-    call Leds.led2Off(); // Clear the LEDs saying we got a message
     call Leds.led0Off();
+    call Leds.led2Off();
 
-    while(!radio_enabled); // Wait for the radio to be enabled
-
-    // Send a message over the current channel
-    if(curr_channel == CHANNEL_BROADCAST)
-      sendBroadcast();
-    else
-      sendLocal();
+    if(curr_channel == CHANNEL_BROADCAST && broadcast_send_ready)
+      {
+	sendBroadcast(TARGET_MSG_TYPE);
+	broadcast_send_ready = FALSE;
+      }
+    else if(curr_channel == CHANNEL_LOCAL && local_send_ready)
+      {
+	sendLocal();
+	local_send_ready = FALSE;
+      }
   }
 
   event void ChannelSelectTimer.fired()
   {
-    // Wait for any sends to complete
-    while(local_sending || broadcast_sending);
-
     // Disable the radio while we're switching
     radio_enabled = FALSE;
 
@@ -94,12 +100,6 @@ implementation
     curr_channel = (curr_channel == CHANNEL_BROADCAST) ? CHANNEL_LOCAL : CHANNEL_BROADCAST;
     call RadioConfig.setChannel(curr_channel);
     
-#if 0     // As we don't know the period, we don't need to modify this yet
-    // Set the sample time for the radio based on the period
-    call LPLConfig.setLocalSleepInterval((curr_channel == CHANNEL_BROADCAST) ? 
-					 BROADCAST_SAMPLE_TIME_MS : LOCAL_SAMPLE_TIME_MS);
-#endif
-
     // Just turn on an LED to show our state right now.  This is NOT the specified behavior.  
     if(curr_channel == CHANNEL_BROADCAST) 
       call Leds.led1On();
@@ -120,10 +120,16 @@ implementation
   // Notify that we've finished syncing
   event void RadioConfig.syncDone(error_t error)
   {
+    uint32_t i;
     if(error == SUCCESS)
-      radio_enabled = TRUE;
+      {
+	radio_enabled = TRUE;
+	for(i = 0; i < 32768; i++);
+	if(TOS_NODE_ID == 1 && curr_channel == CHANNEL_BROADCAST) // CHEAT
+	  sendBroadcast(TARGET_MSG_TYPE);
+      }
   }
-
+  
   /************* MESSAGE CONTROL EVENT HANDLERS **************************/  
   event void AMControl.startDone(error_t error)
   {
@@ -131,7 +137,14 @@ implementation
       {
 	// Initialize all of our timers
 	// Basic startup tasks for when the radio is enabled go here
-	call TransmitTimer.startPeriodic(TX_PERIOD_MS);
+	call TransmitTimer.startPeriodic(TRANSMIT_PERIOD_MS);
+
+	if(TOS_NODE_ID == 1) // CHEAT
+	  {
+	    sendBroadcast(BEACON_MSG_TYPE);
+	    call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
+	    wait_until_beacon = FALSE;
+	  }
       }
     else
       call AMControl.start();
@@ -156,15 +169,20 @@ implementation
   // When we receive a Broadcast message
   event message_t *BroadcastReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
+    uint8_t type = *((uint8_t *)payload);
     TargetMsg_t *t_msg;
     BeaconMsg_t *b_msg;
 
-    if((*((uint8_t *)payload)) == TARGET_MSG_TYPE)
+    if(type == TARGET_MSG_TYPE)
       {
 	t_msg = (TargetMsg_t *)payload;
-	call Leds.led2On(); // Just blink an LED for now.  
+	//call Leds.led2On(); // Just blink an LED for now.  
+
+	// Get the RSSI of this packet	
+	last_target_RSSI = (call RadioPacket.getRssi(msg)); 
+	local_send_ready = TRUE;
       }
-    else
+    else if(type == BEACON_MSG_TYPE) // We received a beacon
       {
 	b_msg = (BeaconMsg_t *)payload;
 
@@ -172,19 +190,20 @@ implementation
 	//call Leds.led2On();
 
 	// (Re)set a timer to turn off the blue LED if we don't hear from the beacon after 5s.  
-	call BeaconInRangeTimer.startOneShot(BEACON_RANGE_PERIOD_MS);
-	
-	// If this was a request and we're the near node, send a response
-	if(mote_state == MOTE_NEAR && b_msg->subnet_id == SUBNET_ID) 
-	  sendBroadcast();
+	// If the timer is already running, this will reset it.  
+	//call BeaconInRangeTimer.startOneShot(BEACON_RANGE_PERIOD_MS);
 
-	// Start the CS timer after we get the first beacon, this should keep us sync'd
-	if(wait_until_beacon) 
-	  {
-	    call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
-	    wait_until_beacon = FALSE;
-	  }
+	// If this was a request and we're the near node, send a response
+	broadcast_send_ready = TRUE;
       }
+
+    // Start the CS timer after we get the first beacon, this should keep us sync'd
+    if(wait_until_beacon) 
+      {
+	call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
+	wait_until_beacon = FALSE;
+      }
+      
 
     return msg;
   }
@@ -199,34 +218,54 @@ implementation
 
   event message_t *LocalReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
-#if 0 // We'd get the RSSI of the packet we just received locally as follows
-    int8_t rssi = call RadioPacket.getRssi(msg); // Get the RSSI of this packet
-#endif
+    LocalMsg_t *recvd_msg = (LocalMsg_t *)payload;
 
-    call Leds.led0On(); // Just blink an LED for now.  
+    call Leds.led2On();
 
+    // If the RSSI value from the other node is less than our last RSSI
+    // or the RSSIs are the same and our node ID is lower
+    if(recvd_msg->rssi < last_target_RSSI ||
+       (recvd_msg->rssi == last_target_RSSI && recvd_msg->who > TOS_NODE_ID)) 
+      {
+	mote_state = MOTE_NEAR; // We're now the near node, so tell the base station
+	broadcast_send_ready = TRUE;
+
+	//call Leds.led0On(); // Show we're the near node by turning on the red LED
+	//call Leds.led1Off();
+      }
+    else
+      {
+	mote_state = MOTE_FAR;  // Otherwise, we're the far node.  
+	//call Leds.led1On(); // Show we're the far node by turning on the green LED.  
+	//call Leds.led0Off();
+      }
+      
     return msg;
   }
 
   /*************************** FUNCTIONS **************************************/  
 
   // Send a message over the broadcast channel
-  void sendBroadcast()
+  void sendBroadcast(uint8_t type)
   {
     ReportMsg_t *payload = 
       (ReportMsg_t *)(call BroadcastPacket.getPayload(&broadcastMsg, sizeof(ReportMsg_t)));
 
+    broadcast_send_ready = FALSE;
+
+    while(curr_channel != CHANNEL_BROADCAST);
+
     // Send only if we're not already sending and the radio is enabled
-    if(payload && radio_enabled && !broadcast_sending)
+    if(payload && !broadcast_sending && radio_enabled)
       {
 	// Populate the struct here
-	payload->msg_type = REPORT_MSG_TYPE;
+	payload->msg_type = type;
 	payload->node_id = TOS_NODE_ID;
 	payload->subnet_id = SUBNET_ID;
 	payload->report_time = 0; // As specified, we don't care about this.
 	
 	// Send the message
-	if(call BroadcastAMSend.send(AM_BROADCAST_ADDR, &broadcastMsg, sizeof(theft_t)) 
+	if(call BroadcastAMSend.send(AM_BROADCAST_ADDR, &broadcastMsg, sizeof(ReportMsg_t)) 
 	   == SUCCESS)
 	  broadcast_sending = TRUE;
       }
@@ -235,16 +274,24 @@ implementation
   // Send a message over the local channel
   void sendLocal()
   {
-    theft_t *payload = 
-      (theft_t *)(call LocalPacket.getPayload(&localMsg, sizeof(theft_t)));
+    LocalMsg_t *payload = 
+      (LocalMsg_t *)(call LocalPacket.getPayload(&localMsg, sizeof(LocalMsg_t)));
+
+    call Leds.led0On();
+    local_send_ready = FALSE;
+
+    while(curr_channel != CHANNEL_LOCAL);
     
+
     if(payload && radio_enabled && !local_sending)
       {
 	// Populate the struct here
-	payload -> who = TOS_NODE_ID;
+	payload->who = TOS_NODE_ID;
+	payload->state = mote_state;
+	payload->rssi = last_target_RSSI;
 	
 	// Send the message (as a broadcast to the current channel)
-	if(call LocalAMSend.send(AM_BROADCAST_ADDR, &localMsg, sizeof(theft_t)) 
+	if(call LocalAMSend.send(AM_BROADCAST_ADDR, &localMsg, sizeof(ReportMsg_t)) 
 	   == SUCCESS)
 	  local_sending = TRUE;
       }
