@@ -13,15 +13,42 @@ typedef nx_struct theft
   nx_uint8_t state;
 } theft_t;
 
+typedef struct {
+  nx_uint8_t msg_type;
+  nx_uint64_t base_clock;
+  nx_uint8_t subnet_id;  // 0 if no request, >0 specifies a request to a subnet ID
+} BeaconMsg;
+
+
+typedef struct {
+  nx_uint8_t msg_type;
+} TargetMsg;
+
+typedef struct {
+  nx_uint8_t msg_type;
+  nx_uint8_t node_id;
+  nx_uint8_t subnet_id;
+  nx_uint64_t report_time;
+} ReportMsg;
+
+
 enum 
   {
     // Need to define which mote are to define our actions
     MOTE_RED = 0,
     MOTE_GREEN = 1,
 
+    BEACON_PERIOD_MS = 1000,
+    TARGET_PERIOD_MS = 500,
+    
+    // Base station/target message types
+    BEACON_MSG_TYPE = 0,
+    TARGET_MSG_TYPE = 1,
+    REPORT_MSG_TYPE = 2,
+
     // Timer periods
     TX_PERIOD_MS = 1000,
-    CS_PERIOD_MS = 5000,
+    CS_PERIOD_MS = (2*BEACON_PERIOD_MS),
 
     // Define near/far mote
     MOTE_NEAR = 0,

@@ -41,15 +41,14 @@ implementation
   message_t broadcastMsg;
   message_t localMsg;
 
-  bool broadcast_sending, local_sending; // Flags to enable/disable local and broadcast sends
+  // Flags to enable/disable local and broadcast sends
+  bool broadcast_sending = FALSE, local_sending = FALSE; 
+
   bool radio_enabled = TRUE; // Flag for disabling the entire radio when we're syncing
-  
-  // Last state of our sensor, so we can detect a change
-  // Initialize to something neither 1 nor 0 we always see a change at startup
-  uint8_t my_last_state = 2;
+  bool wait_until_beacon = TRUE; // Don't switch until we get a beacon message
 
   // Our current channel, initialize to channel in Makefile
-  uint8_t curr_channel = CHANNEL_LOCAL; 
+  uint8_t curr_channel = CHANNEL_BROADCAST; 
 
   // Prototypes
   void sendBroadcast();
@@ -81,6 +80,9 @@ implementation
 
   event void ChannelSelectTimer.fired()
   {
+    // Wait for any sends to complete
+    while(local_sending || broadcast_sending);
+
     // Disable the radio while we're switching
     radio_enabled = FALSE;
 
@@ -121,7 +123,6 @@ implementation
 	// Initialize all of our timers
 	// Basic startup tasks for when the radio is enabled go here
 	call TransmitTimer.startPeriodic(TX_PERIOD_MS);
-	call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
       }
     else
       call AMControl.start();
@@ -147,6 +148,13 @@ implementation
   event message_t *BroadcastReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
     call Leds.led2On(); // Just blink an LED for now.  
+
+    // Start the CS timer after we get the first beacon, this should keep us sync'd
+    if(wait_until_beacon) 
+      {
+	call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
+	wait_until_beacon = FALSE;
+      }
 
     return msg;
   }
