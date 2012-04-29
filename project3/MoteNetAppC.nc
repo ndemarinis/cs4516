@@ -1,7 +1,9 @@
-/*
- * MoteNetAppC.nc
- * Nicholas DeMarinis
- * 27 April 2012
+/**
+ * @file MoteNetAppC.nc
+ *
+ * @author Nicholas DeMarinis
+ *
+ * @date 27 April 2012
  */ 
 
 #include "MoteNet.h"

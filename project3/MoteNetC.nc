@@ -1,7 +1,13 @@
-/*
- * MoteNetC.nc
- * Nicholas DeMarinis
- * 27 April 2012
+/**
+ * @file MoteNetC.nc
+ *
+ * Handles communication between motes on a subnet as specified in Project 3.
+ *
+ * @author Nicholas DeMarinis
+ * @author Eric Prouty
+ * @author Ian Lonergan
+ *
+ * @date 27 April 2012
  */
 
 #include "MoteNet.h"
@@ -85,6 +91,11 @@ implementation
   // This is just an example to transmit a message on whatever channel we're on
   // We probably only need to periodically transmit on the local network in the real mode
   // @author eprouty
+  /**
+  * @author eprouty
+  *
+  *
+  */
   event void B_Main.fired(){
     if(!B_ready){
       //Adding original offset so that the wait is surrounding when we should get a message
@@ -100,7 +111,11 @@ implementation
     }
   }
 
-  // @author eprouty
+  /**
+  * @author eprouty
+  *
+  *
+  */
   event void B_Wait.fired(){
     if(!B_ready){
       //we are done setting up!
@@ -117,7 +132,11 @@ implementation
     }
   }
 
-    // @author eprouty
+  /**
+  * @author eprouty
+  *
+  *
+  */
   event void T_Main.fired(){
     if(!T_ready){
       call T_Wait.startOneShot(WAIT_TIME / 2);
@@ -131,7 +150,11 @@ implementation
     }
   }
 
-  // @author eprouty
+  /**
+  * @author eprouty
+  *
+  *
+  */
   event void T_Wait.fired(){
     if(!T_ready){
       //We are now ready for the main target loop!
@@ -155,8 +178,11 @@ implementation
 
   /************* RADIO CONTROL EVENT HANDLERS **************************/  
 
-  // Notify that we've finished syncing
-  // @author ndemarinis
+  /**
+  * 
+  *
+  * @author ndemarinis
+  */
   event void RadioConfig.syncDone(error_t error)
   {
     if(error == SUCCESS)
@@ -200,7 +226,11 @@ implementation
   }
 
   // When we receive a Broadcast message
-  // @author ndemarinis
+  /**
+  * @author ndemarinis
+  *
+  *
+  */
   event message_t *BroadcastReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
     uint8_t type = *((uint8_t *)payload);
@@ -250,7 +280,11 @@ implementation
     local_sending = FALSE;
   }
 
-  // @author ndemarinis
+  /**
+  * @author ndemarinis
+  *
+  *
+  */
   event message_t *LocalReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
     LocalMsg_t *recvd_msg = (LocalMsg_t *)payload;
@@ -277,7 +311,11 @@ implementation
 
   /*************************** FUNCTIONS **************************************/  
 
-  // @author ndemarinis
+  /**
+  * @author ndemarinis
+  *
+  *
+  */
   void switchChannel(uint8_t channel)
   {
     // Disable the radio while we're switching
@@ -289,8 +327,14 @@ implementation
     call RadioConfig.sync(); // Send our changes to the radio
   }
 
-  // Send a message over the broadcast channel
-  // @author ndemarinis
+  // 
+  /**
+  * Send a message over the broadcast channel
+  *
+  * @author ndemarinis
+  * @param type the type of message being sent out
+  *
+  */
   void sendBroadcast(uint8_t type)
   {
     ReportMsg_t *payload = 
@@ -317,7 +361,12 @@ implementation
   }
 
   // Send a message over the local channel
-  // @author ndemarinis
+  /**
+  * Sends a message over the local channel
+  *
+  * @author ndemarinis
+  *
+  */
   void sendLocal()
   {
     LocalMsg_t *payload = 
