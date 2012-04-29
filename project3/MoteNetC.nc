@@ -11,9 +11,12 @@ module MoteNetC
   uses interface Boot;
   uses interface Leds;
 
-  uses interface Timer<TMilli> as TransmitTimer;
-  uses interface Timer<TMilli> as ChannelSelectTimer;
   uses interface Timer<TMilli> as BeaconInRangeTimer;
+
+  uses interface Timer<TMilli> as B_Main;
+  uses interface Timer<TMilli> as B_Wait;
+  uses interface Timer<TMilli> as T_Main;
+  uses interface Timer<TMilli> as T_Wait;
 
   uses interface SplitControl as AMControl;
 
@@ -51,6 +54,12 @@ implementation
   bool radio_enabled = TRUE; // Flag for disabling the entire radio when we're syncing
   bool wait_until_beacon = TRUE; // Don't switch until we get a beacon message
 
+  //Booleans to inform of when we are in the broadcast channel for each type of message
+  bool B_broadcast = TRUE, T_broadcast = TRUE;
+
+  //Boolean for if we have set up our timers and are ready to actually accept messages
+  bool B_ready = FALSE, T_ready = FALSE;
+
   // Our current channel, initialize to channel in Makefile
   uint8_t curr_channel = CHANNEL_BROADCAST; 
 
@@ -63,6 +72,7 @@ implementation
   // Prototypes
   void sendBroadcast(uint8_t type);
   void sendLocal();
+  void switchChannel(uint8_t channel);
 
   event void Boot.booted()
   {
@@ -74,40 +84,67 @@ implementation
 
   // This is just an example to transmit a message on whatever channel we're on
   // We probably only need to periodically transmit on the local network in the real mode
-  event void TransmitTimer.fired()
-  {
-#ifdef CHEAT
-    call Leds.led0Off();
-    call Leds.led2Off();
-#endif
-    if(curr_channel == CHANNEL_BROADCAST && broadcast_send_ready)
-      {
-	sendBroadcast(TARGET_MSG_TYPE);
-	broadcast_send_ready = FALSE;
+  // @author eprouty
+  event void B_Main.fired(){
+    if(!B_ready){
+      //Adding original offset so that the wait is surrounding when we should get a message
+      call B_Wait.startOneShot(WAIT_TIME / 2);
+    } else {
+      //wait for the message
+      B_broadcast = TRUE;
+      call B_Wait.startOneShot(WAIT_TIME);
+      //If we are not already on the broadcase channel due to the Target timer switch to it
+      if(!T_broadcast){
+	switchChannel(CHANNEL_BROADCAST);
       }
-    else if(curr_channel == CHANNEL_LOCAL && local_send_ready)
-      {
-	sendLocal();
-	local_send_ready = FALSE;
-      }
+    }
   }
 
-  event void ChannelSelectTimer.fired()
-  {
-    // Disable the radio while we're switching
-    radio_enabled = FALSE;
+  // @author eprouty
+  event void B_Wait.fired(){
+    if(!B_ready){
+      //we are done setting up!
+      B_ready = TRUE;
+      //first main timer!
+      call B_Main.startOneShot(BEACON_PERIOD_MS - WAIT_TIME);
+    } else {
+      B_broadcast = FALSE;
+      call B_Main.startOneShot(BEACON_PERIOD_MS - WAIT_TIME);
+      //If T is not waiting for a broadcast then switch back to the local channel for sending...
+      if(!T_broadcast){
+	switchChannel(CHANNEL_LOCAL);
+      }
+    }
+  }
 
-    // Switch to the other channel
-    curr_channel = (curr_channel == CHANNEL_BROADCAST) ? CHANNEL_LOCAL : CHANNEL_BROADCAST;
-    call RadioConfig.setChannel(curr_channel);
-    
-    // Just turn on an LED to show our state right now.  This is NOT the specified behavior.  
-    if(curr_channel == CHANNEL_BROADCAST) 
-      call Leds.led1On();
-    else
-      call Leds.led1Off();
+    // @author eprouty
+  event void T_Main.fired(){
+    if(!T_ready){
+      call T_Wait.startOneShot(WAIT_TIME / 2);
+    } else {
+      T_broadcast = TRUE;
+      call T_Wait.startOneShot(WAIT_TIME);
+      //if we are not waiting on a Beacon message than switch back to the local channel
+      if(!B_broadcast){
+	switchChannel(CHANNEL_BROADCAST);
+      }
+    }
+  }
 
-    call RadioConfig.sync(); // Send our changes to the radio
+  // @author eprouty
+  event void T_Wait.fired(){
+    if(!T_ready){
+      //We are now ready for the main target loop!
+      T_ready = TRUE;
+      call T_Main.startOneShot(TARGET_PERIOD_MS - WAIT_TIME);
+    } else {
+      T_broadcast = FALSE;
+      call T_Main.startOneShot(TARGET_PERIOD_MS - WAIT_TIME);
+      //if we are not waiting for a beacon message than we need to switch to the broadcast channel
+      if(!B_broadcast){
+	switchChannel(CHANNEL_LOCAL);
+      }
+    }
   }
 
   event void BeaconInRangeTimer.fired()
@@ -119,38 +156,30 @@ implementation
   /************* RADIO CONTROL EVENT HANDLERS **************************/  
 
   // Notify that we've finished syncing
+  // @author ndemarinis
   event void RadioConfig.syncDone(error_t error)
   {
-    uint32_t i;
     if(error == SUCCESS)
       {
 	radio_enabled = TRUE;
-#ifdef CHEAT
-	for(i = 0; i < 32768; i++);
-	if(TOS_NODE_ID == 1 && curr_channel == CHANNEL_BROADCAST) // CHEAT
-	  sendBroadcast(TARGET_MSG_TYPE);
-#endif
+
+	if(curr_channel == CHANNEL_BROADCAST && broadcast_send_ready)
+	  {
+	    sendBroadcast(TARGET_MSG_TYPE);
+	    broadcast_send_ready = FALSE;
+	  }
+	else if(curr_channel == CHANNEL_LOCAL && local_send_ready)
+	  {
+	    sendLocal();
+	    local_send_ready = FALSE;
+	  }
       }
   }
   
   /************* MESSAGE CONTROL EVENT HANDLERS **************************/  
   event void AMControl.startDone(error_t error)
   {
-    if(error == SUCCESS)
-      {
-	// Initialize all of our timers
-	// Basic startup tasks for when the radio is enabled go here
-	call TransmitTimer.startPeriodic(TRANSMIT_PERIOD_MS);
-#ifdef CHEAT
-	if(TOS_NODE_ID == 1) // CHEAT
-	  {
-	    sendBroadcast(BEACON_MSG_TYPE);
-	    call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
-	    wait_until_beacon = FALSE;
-	  }
-#endif
-      }
-    else
+    if(error != SUCCESS)
       call AMControl.start();
   }
 
@@ -171,14 +200,19 @@ implementation
   }
 
   // When we receive a Broadcast message
+  // @author ndemarinis
   event message_t *BroadcastReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
     uint8_t type = *((uint8_t *)payload);
     TargetMsg_t *t_msg;
     BeaconMsg_t *b_msg;
 
+
     if(type == TARGET_MSG_TYPE)
       {
+	if(!T_ready){
+	  call T_Main.startOneShot(TARGET_PERIOD_MS);
+	}
 	t_msg = (TargetMsg_t *)payload;
 
 	// Get the RSSI of this packet	
@@ -187,28 +221,25 @@ implementation
       }
     else if(type == BEACON_MSG_TYPE) // We received a beacon
       {
+	if(!B_ready){
+	  call B_Main.startOneShot(BEACON_PERIOD_MS);
+	}
+
 	b_msg = (BeaconMsg_t *)payload;
-#ifndef CHEAT
+
 	// As specified, turn on the blue LED.  
 	call Leds.led2On();
 
 	// (Re)set a timer to turn off the blue LED if we don't hear from the beacon after 5s.  
 	// If the timer is already running, this will reset it.  
 	call BeaconInRangeTimer.startOneShot(BEACON_RANGE_PERIOD_MS);
-#endif
+
 	// If this was a request and we're the near node, send a response
-	broadcast_send_ready = TRUE;
+	if(mote_state == MOTE_NEAR && b_msg->subnet_id == SUBNET_ID)
+	  broadcast_send_ready = TRUE;
       }
 
-    // Start the CS timer after we get the first beacon, this should keep us sync'd
-    if(wait_until_beacon) 
-      {
-	call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
-	wait_until_beacon = FALSE;
-      }
-      
-
-    return msg;
+   return msg;
   }
 
   /***************** LOCAL MESSAGE EVENT HANDLERS **************************/  
@@ -219,13 +250,10 @@ implementation
     local_sending = FALSE;
   }
 
+  // @author ndemarinis
   event message_t *LocalReceive.receive(message_t *msg, void *payload, uint8_t len)
   {
     LocalMsg_t *recvd_msg = (LocalMsg_t *)payload;
-
-#ifdef CHEAT
-    call Leds.led2On();
-#endif
 
     // If the RSSI value from the other node is less than our last RSSI
     // or the RSSIs are the same and our node ID is lower
@@ -234,18 +262,14 @@ implementation
       {
 	mote_state = MOTE_NEAR; // We're now the near node, so tell the base station
 	broadcast_send_ready = TRUE;
-#ifndef CHEAT
 	call Leds.led0On(); // Show we're the near node by turning on the red LED
 	call Leds.led1Off();
-#endif
       }
     else
       {
 	mote_state = MOTE_FAR;  // Otherwise, we're the far node.  
-#ifndef CHEAT
 	call Leds.led1On(); // Show we're the far node by turning on the green LED
 	call Leds.led0Off();
-#endif
       }
       
     return msg;
@@ -253,7 +277,20 @@ implementation
 
   /*************************** FUNCTIONS **************************************/  
 
+  // @author ndemarinis
+  void switchChannel(uint8_t channel)
+  {
+    // Disable the radio while we're switching
+    radio_enabled = FALSE;
+    
+    curr_channel = channel;
+    call RadioConfig.setChannel(curr_channel);
+    
+    call RadioConfig.sync(); // Send our changes to the radio
+  }
+
   // Send a message over the broadcast channel
+  // @author ndemarinis
   void sendBroadcast(uint8_t type)
   {
     ReportMsg_t *payload = 
@@ -280,19 +317,15 @@ implementation
   }
 
   // Send a message over the local channel
+  // @author ndemarinis
   void sendLocal()
   {
     LocalMsg_t *payload = 
       (LocalMsg_t *)(call LocalPacket.getPayload(&localMsg, sizeof(LocalMsg_t)));
 
-#ifdef CHEAT
-    call Leds.led0On();
-#endif
-
     local_send_ready = FALSE;
 
     while(curr_channel != CHANNEL_LOCAL);
-    
 
     if(payload && radio_enabled && !local_sending)
       {

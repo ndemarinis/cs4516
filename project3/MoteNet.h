@@ -39,7 +39,6 @@ typedef nx_struct localMsg
   nx_int8_t rssi;
 } LocalMsg_t;
 
-#define CHEAT 1
 
 enum 
   {
@@ -51,6 +50,7 @@ enum
 
     BEACON_PERIOD_MS = 1000,
     TARGET_PERIOD_MS = 500,
+    WAIT_TIME = 100,
     
     // Base station/target message types
     BEACON_MSG_TYPE = 0,

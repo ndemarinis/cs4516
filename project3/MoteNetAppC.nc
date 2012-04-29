@@ -16,9 +16,12 @@ implementation
   components new HamamatsuS10871TsrC() as TsrLight;
 
   // Timers for periodically transmitting messages and channel switching
-  components new TimerMilliC() as TxTimer;
-  components new TimerMilliC() as CSTimer;
   components new TimerMilliC() as BTimer;
+
+  components new TimerMilliC() as BMTimer;
+  components new TimerMilliC() as BWTimer;
+  components new TimerMilliC() as TMTimer;
+  components new TimerMilliC() as TWTimer;
 
   // Message control
   components ActiveMessageC;
@@ -38,9 +41,12 @@ implementation
   MoteNetC.Leds -> LedsC;
 
   // Connect the timers
-  MoteNetC.TransmitTimer      -> TxTimer;
-  MoteNetC.ChannelSelectTimer -> CSTimer;
   MoteNetC.BeaconInRangeTimer -> BTimer;
+
+  MoteNetC.B_Main -> BMTimer;
+  MoteNetC.B_Wait -> BWTimer;
+  MoteNetC.T_Main -> TMTimer;
+  MoteNetC.T_Wait -> TWTimer;
 
   // Connect the radio components
   MoteNetC.RadioConfig -> CC2420ControlC;
