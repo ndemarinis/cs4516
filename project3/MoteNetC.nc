@@ -76,9 +76,10 @@ implementation
   // We probably only need to periodically transmit on the local network in the real mode
   event void TransmitTimer.fired()
   {
+#ifdef CHEAT
     call Leds.led0Off();
     call Leds.led2Off();
-
+#endif
     if(curr_channel == CHANNEL_BROADCAST && broadcast_send_ready)
       {
 	sendBroadcast(TARGET_MSG_TYPE);
@@ -124,9 +125,11 @@ implementation
     if(error == SUCCESS)
       {
 	radio_enabled = TRUE;
+#ifdef CHEAT
 	for(i = 0; i < 32768; i++);
 	if(TOS_NODE_ID == 1 && curr_channel == CHANNEL_BROADCAST) // CHEAT
 	  sendBroadcast(TARGET_MSG_TYPE);
+#endif
       }
   }
   
@@ -138,13 +141,14 @@ implementation
 	// Initialize all of our timers
 	// Basic startup tasks for when the radio is enabled go here
 	call TransmitTimer.startPeriodic(TRANSMIT_PERIOD_MS);
-
+#ifdef CHEAT
 	if(TOS_NODE_ID == 1) // CHEAT
 	  {
 	    sendBroadcast(BEACON_MSG_TYPE);
 	    call ChannelSelectTimer.startPeriodic(CS_PERIOD_MS);
 	    wait_until_beacon = FALSE;
 	  }
+#endif
       }
     else
       call AMControl.start();
@@ -176,23 +180,22 @@ implementation
     if(type == TARGET_MSG_TYPE)
       {
 	t_msg = (TargetMsg_t *)payload;
-	//call Leds.led2On(); // Just blink an LED for now.  
 
 	// Get the RSSI of this packet	
 	last_target_RSSI = (call RadioPacket.getRssi(msg)); 
-	local_send_ready = TRUE;
+	local_send_ready = TRUE; // Send a message to our other local nodes saying we updated
       }
     else if(type == BEACON_MSG_TYPE) // We received a beacon
       {
 	b_msg = (BeaconMsg_t *)payload;
-
+#ifndef CHEAT
 	// As specified, turn on the blue LED.  
-	//call Leds.led2On();
+	call Leds.led2On();
 
 	// (Re)set a timer to turn off the blue LED if we don't hear from the beacon after 5s.  
 	// If the timer is already running, this will reset it.  
-	//call BeaconInRangeTimer.startOneShot(BEACON_RANGE_PERIOD_MS);
-
+	call BeaconInRangeTimer.startOneShot(BEACON_RANGE_PERIOD_MS);
+#endif
 	// If this was a request and we're the near node, send a response
 	broadcast_send_ready = TRUE;
       }
@@ -220,7 +223,9 @@ implementation
   {
     LocalMsg_t *recvd_msg = (LocalMsg_t *)payload;
 
+#ifdef CHEAT
     call Leds.led2On();
+#endif
 
     // If the RSSI value from the other node is less than our last RSSI
     // or the RSSIs are the same and our node ID is lower
@@ -229,15 +234,18 @@ implementation
       {
 	mote_state = MOTE_NEAR; // We're now the near node, so tell the base station
 	broadcast_send_ready = TRUE;
-
-	//call Leds.led0On(); // Show we're the near node by turning on the red LED
-	//call Leds.led1Off();
+#ifndef CHEAT
+	call Leds.led0On(); // Show we're the near node by turning on the red LED
+	call Leds.led1Off();
+#endif
       }
     else
       {
 	mote_state = MOTE_FAR;  // Otherwise, we're the far node.  
-	//call Leds.led1On(); // Show we're the far node by turning on the green LED.  
-	//call Leds.led0Off();
+#ifndef CHEAT
+	call Leds.led1On(); // Show we're the far node by turning on the green LED
+	call Leds.led0Off();
+#endif
       }
       
     return msg;
@@ -277,7 +285,10 @@ implementation
     LocalMsg_t *payload = 
       (LocalMsg_t *)(call LocalPacket.getPayload(&localMsg, sizeof(LocalMsg_t)));
 
+#ifdef CHEAT
     call Leds.led0On();
+#endif
+
     local_send_ready = FALSE;
 
     while(curr_channel != CHANNEL_LOCAL);

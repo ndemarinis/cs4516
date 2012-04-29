@@ -39,6 +39,8 @@ typedef nx_struct localMsg
   nx_int8_t rssi;
 } LocalMsg_t;
 
+#define CHEAT 1
+
 enum 
   {
     // Need to define which mote are to define our actions
