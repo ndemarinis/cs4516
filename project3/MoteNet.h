@@ -7,12 +7,6 @@
 #ifndef MOTENET_H
 #define MOTENET_H
 
-typedef nx_struct theft
-{
-  nx_uint16_t who;
-  nx_uint8_t state;
-} theft_t;
-
 typedef struct BeaconMsg {
   nx_uint8_t msg_type;
   nx_uint64_t base_clock;
@@ -42,10 +36,6 @@ typedef nx_struct localMsg
 
 enum 
   {
-    // Need to define which mote are to define our actions
-    MOTE_RED = 0,
-    MOTE_GREEN = 1,
-
     SUBNET_ID = 5,
 
     BEACON_PERIOD_MS = 1000,
